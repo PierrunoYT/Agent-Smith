@@ -275,31 +275,43 @@
 
     <!-- Login Overlay -->
     <div id="login-overlay" class="as-login">
-        <div class="as-login-card" style="width: 320px; padding: 26px 24px; background: var(--sidebar-bg); border: 1px solid var(--accent-color); border-radius: 10px; box-shadow: 0 0 28px var(--accent-glow);">
-            <div class="as-login-brand">
-                <span class="as-wordmark" data-text="AGENT SMITH">AGENT SMITH</span>
-                <span class="as-login-sub">LOCAL SYSTEM · ACCESS REQUIRED</span>
+        <div class="as-login-shell">
+            <section class="as-login-hero" aria-hidden="true">
+                <p class="as-login-kicker">WELCOME TO</p>
+                <h2>AGENT SMITH</h2>
+                <p>Build, automate, and ship with a focused AI workspace designed for flow.</p>
+                <ul class="as-login-benefits">
+                    <li>Fast chat, agent, and code modes</li>
+                    <li>Project-safe planning and execution</li>
+                    <li>Clean history with revertable actions</li>
+                </ul>
+            </section>
+            <div class="as-login-card">
+                <div class="as-login-brand">
+                    <span class="as-wordmark" data-text="AGENT SMITH">AGENT SMITH</span>
+                    <span class="as-login-sub">LOCAL SYSTEM · ACCESS REQUIRED</span>
+                </div>
+                <h1 id="auth-title" class="as-login-mode">LOGIN REQUIRED</h1>
+                <div id="login-fields">
+                    <label for="auth-username">USERNAME</label>
+                    <input type="text" id="auth-username">
+                    <label for="auth-password">PASSWORD</label>
+                    <input type="password" id="auth-password">
+                    <button id="login-btn">SIGN IN</button>
+                    <p id="auth-switch-text" class="as-auth-switch">New here? <span>Create account</span></p>
+                </div>
+                <div id="register-fields" style="display: none;">
+                    <label for="reg-username">USERNAME</label>
+                    <input type="text" id="reg-username">
+                    <label for="reg-password">PASSWORD</label>
+                    <input type="password" id="reg-password">
+                    <label for="reg-password-confirm">CONFIRM PASSWORD</label>
+                    <input type="password" id="reg-password-confirm">
+                    <button id="register-submit-btn">REGISTER</button>
+                    <p id="reg-switch-text" class="as-auth-switch">Already have an account? <span>Sign In</span></p>
+                </div>
+                <p id="auth-error" class="as-auth-error"></p>
             </div>
-            <h1 id="auth-title" class="as-login-mode" style="text-align: center; margin: 4px 0 20px; font-size: 0.8rem;">LOGIN REQUIRED</h1>
-            <div id="login-fields">
-                <label for="auth-username">USERNAME</label>
-                <input type="text" id="auth-username" style="width: 100%; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; margin-bottom: 15px; outline: none; box-sizing: border-box;">
-                <label for="auth-password">PASSWORD</label>
-                <input type="password" id="auth-password" style="width: 100%; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; margin-bottom: 20px; outline: none; box-sizing: border-box;">
-                <button id="login-btn" style="width: 100%; padding: 10px; margin-bottom: 10px;">SIGN IN</button>
-                <p id="auth-switch-text" style="text-align: center; font-size: 0.8rem; cursor: pointer; color: #8b949e;">New here? <span style="color: var(--accent-color);">Create account</span></p>
-            </div>
-            <div id="register-fields" style="display: none;">
-                <label for="reg-username">USERNAME</label>
-                <input type="text" id="reg-username" style="width: 100%; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; margin-bottom: 15px; outline: none; box-sizing: border-box;">
-                <label for="reg-password">PASSWORD</label>
-                <input type="password" id="reg-password" style="width: 100%; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; margin-bottom: 15px; outline: none; box-sizing: border-box;">
-                <label for="reg-password-confirm">CONFIRM PASSWORD</label>
-                <input type="password" id="reg-password-confirm" style="width: 100%; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; margin-bottom: 20px; outline: none; box-sizing: border-box;">
-                <button id="register-submit-btn" style="width: 100%; padding: 10px; margin-bottom: 10px;">REGISTER</button>
-                <p id="reg-switch-text" style="text-align: center; font-size: 0.8rem; cursor: pointer; color: #8b949e;">Already have an account? <span style="color: var(--accent-color);">Sign In</span></p>
-            </div>
-            <p id="auth-error" style="color: #da3633; font-size: 0.8rem; text-align: center; margin-top: 10px; min-height: 1.2rem;"></p>
         </div>
     </div>
 
