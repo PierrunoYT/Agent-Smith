@@ -835,13 +835,17 @@ body.electron-app #admin-overlay {
         var(--bg-color) !important;
 }
 .as-login-shell {
-    width: min(960px, calc(100vw - 40px));
+    width: min(960px, calc(100vw - var(--login-shell-gutter, 40px)));
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
     border: 1px solid color-mix(in srgb, var(--accent-color) 28%, var(--hairline));
     border-radius: var(--radius-lg);
-    background: linear-gradient(145deg, rgba(7, 14, 10, 0.9), rgba(5, 9, 7, 0.92));
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02), var(--shadow-pop), 0 0 80px var(--accent-glow);
+    background: linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--bg-color) 86%, #000),
+        color-mix(in srgb, var(--sidebar-bg) 82%, #000)
+    );
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-color) 6%, transparent), var(--shadow-pop), 0 0 80px var(--accent-glow);
     overflow: hidden;
 }
 .as-login-hero {
@@ -853,14 +857,14 @@ body.electron-app #admin-overlay {
 }
 .as-login-kicker {
     margin: 0 0 8px;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.1em;
     font-size: 0.68rem;
     color: var(--text-muted);
     text-transform: uppercase;
 }
 .as-login-hero h2 {
     margin: 0;
-    font-size: clamp(1.5rem, 4vw, 2.4rem);
+    font-size: clamp(1.5rem, 1.2rem + 2vw, 2.4rem);
     letter-spacing: 0.06em;
     color: var(--accent-color);
     text-shadow: 0 0 20px var(--accent-glow);
@@ -889,16 +893,16 @@ body.electron-app #admin-overlay {
 .as-login-card {
     width: 100%;
     padding: clamp(24px, 4vw, 32px);
-    background: rgba(8,12,10,0.85) !important;
-    border: 1px solid var(--hairline) !important;
-    border-radius: 0 !important;
-    box-shadow: var(--shadow-pop), 0 0 60px var(--accent-glow) !important;
+    background: rgba(8,12,10,0.85);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-pop), 0 0 60px var(--accent-glow);
     backdrop-filter: blur(16px);
 }
 .as-login-card label {
     display: block;
-    font-size: 0.72rem;
-    letter-spacing: 0.18em;
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
     margin-bottom: 6px;
 }
 .as-login-card input {
@@ -927,6 +931,11 @@ body.electron-app #admin-overlay {
     letter-spacing: 0.22em;
     font-size: 0.62rem;
 }
+.as-login-mode {
+    text-align: center;
+    margin: 4px 0 20px;
+    font-size: 0.8rem;
+}
 #login-btn, #register-submit-btn {
     width: 100%;
     padding: 11px 12px;
@@ -944,13 +953,13 @@ body.electron-app #admin-overlay {
     text-align: center;
     font-size: 0.8rem;
     cursor: pointer;
-    color: #8b949e;
+    color: var(--text-muted);
 }
 .as-auth-switch span {
     color: var(--accent-color);
 }
 .as-auth-error {
-    color: #da3633;
+    color: var(--danger-strong);
     font-size: 0.8rem;
     text-align: center;
     margin: 10px 0 0;
@@ -958,7 +967,8 @@ body.electron-app #admin-overlay {
 }
 @media (max-width: 860px) {
     .as-login-shell {
-        width: min(460px, calc(100vw - 24px));
+        --login-shell-gutter: 24px;
+        width: min(460px, calc(100vw - var(--login-shell-gutter)));
         grid-template-columns: 1fr;
     }
     .as-login-hero {
