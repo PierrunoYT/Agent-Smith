@@ -98,5 +98,9 @@
       "icon": "build/icon.png",
       "target": "nsis"
     }
+  },
+  "allowScripts": {
+    "electron@28.3.3": true,
+    "esbuild@0.28.0": true
   }
 }
