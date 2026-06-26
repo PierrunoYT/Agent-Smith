@@ -228,13 +228,6 @@ npm run build:renderer
 
 **Do not zip `node_modules`.** Native binaries (`esbuild`, `electron`) are platform-specific. Send source only; recipients run `npm install` on their machine.
 
-Optional WhatsApp deps (`whatsapp-web.js`, Puppeteer/Chromium) are **opt-in** — a lean `npm install` works on a clean Linux box:
-
-```bash
-npm install                 # no Chromium
-npm install whatsapp-web.js qrcode   # only if you want WhatsApp linking
-```
-
 ---
 
 ## License
