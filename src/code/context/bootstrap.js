@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { detectProjectCommands } = require('../../shared/verificationHarness.js');
 const { buildNewArtifactBlock } = require('./artifactHints.js');
+const { buildSymbolMap } = require('./symbolMap.js');
 
 function detectRuntime(root) {
     const meta = detectProjectCommands(root);
@@ -32,6 +33,12 @@ function buildBootstrapBlock(root, treeSummary, goal) {
     if (rt.testCmd) lines.push(`Test command: ${rt.testCmd}`);
     if (rt.lintCmd) lines.push(`Lint command: ${rt.lintCmd}`);
     if (treeSummary) lines.push('', 'Project tree (abbreviated):', treeSummary.slice(0, 2000));
+    // Ranked code map — helps the model locate relevant symbols in an EXISTING project
+    // without reading everything. Empty (skipped) for greenfield. Non-fatal.
+    try {
+        const symbolMap = buildSymbolMap(root);
+        if (symbolMap) lines.push('', symbolMap);
+    } catch (e) { /* non-fatal */ }
     lines.push(
         '',
         'Use read_file before editing. Prefer patch over write_file for changes.',

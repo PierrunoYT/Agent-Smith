@@ -1,5 +1,20 @@
 # Agent Smith Changelog
 
+## [46.12.0] - 2026-06-27 — Code Mode robustness: anti-freeze, reasoning models, code map
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Added
+- **Run watchdog + heartbeat.** Code Mode emits periodic `heartbeat` events (elapsed/idle/phase) and converts a genuine async stall into a clear `WATCHDOG_STALL` error instead of an invisible freeze. Tunable via `XK_CODE_HEARTBEAT_MS`, `XK_CODE_INACTIVITY_MS`, `XK_CODE_MAX_RUNTIME_MS`.
+- **Ranked code map.** The first-turn bootstrap now includes a `[CODE MAP]` of key project symbols (functions/classes/exports), ranked by entrypoint/descriptive heuristics, so small models can locate code in an existing project without reading the whole tree. Empty for greenfield. Dependency-free.
+- **Reasoning-model handling.** Detects when a model burns its whole reply budget on internal reasoning and emits empty output (`finish_reason: length`), then retries with a larger budget and a "stop reasoning, act now" nudge. Handles both the `reasoning_content` and `reasoning` stream fields and strips inline `<think>…</think>` from content before tool/edit parsing.
+- **docs/CODE_MODE_MODELS.md** — guidance on choosing coder (non-reasoning) models, the LM Studio VRAM/`lms` model-switch steps, and watchdog env knobs.
+
+### Fixed
+- **Clearer model-load errors.** A model that fails to load in LM Studio now surfaces an actionable message instead of a generic HTTP error.
+- **Bounded plugin tool calls** (2-min timeout) and **timeout-guarded smoke verification** (VM engine by default; jsdom opt-in via `XK_SMOKE_JSDOM`) so a misbehaving tool or infinite loop can't hang a run.
+- **Pac-Man scaffold scope.** The last-resort recovery scaffold no longer fires for generic "game" goals, so a non-Pac-Man build can't be overwritten with Pac-Man code.
+
 ## [46.11.0] - 2026-06-24 — Desktop polish, sidebar UX, docs sync
 
 ### Added
