@@ -391,9 +391,22 @@ async function runTurnLoop(ctx) {
                 onDelta: (d) => emit({ type: 'delta', text: d })
             });
             if (trace) trace.inferenceOk(Date.now() - inferStart);
+            session.stallRetries = 0;
         } catch (e) {
             if (/aborted/i.test(e.message)) throw e;
             if (trace) trace.inferenceError(Date.now() - inferStart, e.message);
+            // Local/reasoning models intermittently stall mid-stream (no tokens for the
+            // idle window). A stall is usually transient — retry the turn on a FRESH
+            // request a few times before giving up, so ONE hiccup doesn't end an
+            // otherwise-progressing build. Bounded; no-progress + max-turn guards apply.
+            const STALL_RETRY_LIMIT = Number(process.env.XK_CODE_STALL_RETRIES) || 4;
+            if (/stalled|timed out/i.test(e.message)) {
+                session.stallRetries = (session.stallRetries || 0) + 1;
+                if (session.stallRetries <= STALL_RETRY_LIMIT) {
+                    emit({ type: 'stream_retry', turn: session.turn, attempt: session.stallRetries, message: `Model stalled mid-reply — retrying (${session.stallRetries}/${STALL_RETRY_LIMIT}).` });
+                    continue;
+                }
+            }
             const gate = await evaluateCompletionBlock(ctx, session, planArtifacts, execDeps);
             if (gate.allow) {
                 finalGate = gate;

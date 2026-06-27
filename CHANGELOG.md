@@ -1,5 +1,14 @@
 # Agent Smith Changelog
 
+## [46.12.6] - 2026-06-27 — Code Mode: retry on model stall
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **A single model stall no longer ends the whole run.** Local/reasoning models intermittently stall mid-stream (the 60s idle timeout fires). Previously that error ended the run immediately, abandoning a build that had already written some files with the rest missing. Now a stall retries the turn on a fresh request (up to 4 consecutive; `XK_CODE_STALL_RETRIES`), and the no-progress and max-turn guards still bound the run. Verified live: a build survived 4 stalls and kept going for ~10 minutes instead of dying on the first.
+
+This is a **resilience** improvement, not a capability one. A model that stalls on a large fraction of its turns still cannot reliably complete very large multi-file specs in a reasonable time — use a coder model (e.g. Qwen2.5-Coder) for ambitious builds; the runtime advisory flags this.
+
 ## [46.12.5] - 2026-06-27 — Code Mode: multi-file build reliability
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.
