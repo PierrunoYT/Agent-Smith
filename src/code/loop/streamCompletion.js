@@ -8,6 +8,7 @@ const http = require('http');
 const { normalizeLlmBaseUrl } = require('../../shared/netGuard.js');
 const { tryParseJson } = require('../tools/jsonRepair.js');
 const { stripInlineReasoning } = require('./reasoningStrip.js');
+const { buildToolResponseFormat, parseConstrainedContent } = require('./constrainTools.js');
 
 function apiBase(base) {
     return normalizeLlmBaseUrl(base);
@@ -33,7 +34,7 @@ function messagesForWire(messages) {
 
 async function streamCompletion({
     apiBaseUrl, model, messages, tools, signal, onDelta, maxTokens, temperature,
-    requestTimeoutMs = 300000, inactivityTimeoutMs = 60000
+    requestTimeoutMs = 300000, inactivityTimeoutMs = 60000, constrain = false
 }) {
     const url = `${apiBase(apiBaseUrl)}/v1/chat/completions`;
     // Send an EXPLICIT positive max_tokens. max_tokens:-1 is mishandled by several servers
@@ -48,7 +49,15 @@ async function streamCompletion({
         temperature: Number.isFinite(temperature) ? temperature : 0.2,
         max_tokens: cap
     };
-    if (tools && tools.length) body.tools = tools;
+    // Constrained tool-call decoding (opt-in): instead of native function-calling, send the
+    // tools as an LM Studio json_schema response_format so the model can only emit a valid
+    // {name, arguments} object. The reply arrives as JSON content, parsed below.
+    const responseFormat = constrain && tools && tools.length ? buildToolResponseFormat(tools) : null;
+    if (responseFormat) {
+        body.response_format = responseFormat;
+    } else if (tools && tools.length) {
+        body.tools = tools;
+    }
 
     const parsed = new URL(url);
     const lib = parsed.protocol === 'https:' ? https : http;
@@ -158,6 +167,24 @@ async function streamCompletion({
                 // edit/tool parser. Flag it so the reasoning-truncation guard still fires.
                 const stripped = stripInlineReasoning(content);
                 if (stripped.hadReasoning) sawReasoning = true;
+
+                // Constrained decoding: the reply IS the tool call (JSON content), not a
+                // native tool_calls array. Parse it. A "finish" choice becomes a normal
+                // no-tool-call turn (content = summary) so the completion gate runs.
+                if (responseFormat) {
+                    const c = parseConstrainedContent(stripped.text);
+                    finish(resolve, {
+                        message: {
+                            role: 'assistant',
+                            content: c.finish ? (c.summary || '') : '',
+                            tool_calls: c.toolCalls.length ? c.toolCalls : undefined
+                        },
+                        finishReason,
+                        sawReasoning
+                    });
+                    return;
+                }
+
                 finish(resolve, {
                     message: { role: 'assistant', content: stripped.text, tool_calls: toolCalls.length ? toolCalls : undefined },
                     finishReason,

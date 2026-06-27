@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.13.0] - 2026-06-27 — Code Mode: constrained tool-call decoding (opt-in)
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Added
+- **Constrained tool-call decoding for local models (opt-in: `XK_CODE_CONSTRAIN_TOOLS=1`).** Local/reasoning models often narrate ("I'll write index.html") or emit malformed tool calls instead of actually calling a tool, which stalls multi-file builds. When enabled, Code Mode sends the advertised tools to LM Studio as a `response_format` `json_schema` union (structured-output / constrained decoding), so the model can ONLY emit a valid `{name, arguments}` tool call — it physically cannot malform or narrate. A synthetic `attempt_completion` branch lets it still signal "done" (handled as a normal no-tool-call turn). **Default OFF**, so current behavior is unchanged. Verified against `qwen3-coder-30b`: produces a valid tool call via the constrained path. Unit tests: `constrainTools.test.js`. Suite 440/440 with the feature off.
+
+
 ## [46.12.7] - 2026-06-27 — Code Mode: fix false "verified" on reused workspaces
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

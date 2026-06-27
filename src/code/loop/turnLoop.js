@@ -388,7 +388,10 @@ async function runTurnLoop(ctx) {
                 // file fits — avoids servers that cap -1 at a tiny default and truncate.
                 maxTokens: outReserve,
                 temperature: session.codeTemperature,
-                onDelta: (d) => emit({ type: 'delta', text: d })
+                onDelta: (d) => emit({ type: 'delta', text: d }),
+                // Constrained tool-call decoding (opt-in) — forces valid tool calls from
+                // local models that otherwise narrate/malform. LM Studio json_schema.
+                constrain: process.env.XK_CODE_CONSTRAIN_TOOLS === '1'
             });
             if (trace) trace.inferenceOk(Date.now() - inferStart);
             session.stallRetries = 0;
