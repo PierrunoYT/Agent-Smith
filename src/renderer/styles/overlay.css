@@ -834,92 +834,12 @@ body.electron-app #admin-overlay {
             color-mix(in srgb, var(--accent-color) 8%, transparent), transparent 70%),
         var(--bg-color) !important;
 }
-.as-login-shell {
-    width: min(960px, calc(100vw - var(--login-shell-gutter, 40px)));
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    border: 1px solid color-mix(in srgb, var(--accent-color) 28%, var(--hairline));
-    border-radius: var(--radius-lg);
-    background: linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--bg-color) 86%, #000),
-        color-mix(in srgb, var(--sidebar-bg) 82%, #000)
-    );
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-color) 6%, transparent), var(--shadow-pop), 0 0 80px var(--accent-glow);
-    overflow: hidden;
-}
-.as-login-hero {
-    padding: clamp(24px, 5vw, 50px);
-    border-right: 1px solid color-mix(in srgb, var(--accent-color) 24%, var(--hairline));
-    background:
-        radial-gradient(circle at 5% 0%, color-mix(in srgb, var(--accent-color) 14%, transparent), transparent 35%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 40%);
-}
-.as-login-kicker {
-    margin: 0 0 8px;
-    letter-spacing: 0.1em;
-    font-size: 0.68rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-}
-.as-login-hero h2 {
-    margin: 0;
-    font-size: clamp(1.5rem, 1.2rem + 2vw, 2.4rem);
-    letter-spacing: 0.06em;
-    color: var(--accent-color);
-    text-shadow: 0 0 20px var(--accent-glow);
-}
-.as-login-hero p {
-    margin: 16px 0 0;
-    color: var(--text-color);
-    line-height: 1.55;
-    max-width: 40ch;
-}
-.as-login-benefits {
-    margin: 20px 0 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    gap: 10px;
-}
-.as-login-benefits li {
-    border: 1px solid color-mix(in srgb, var(--accent-color) 24%, var(--hairline));
-    border-radius: 999px;
-    padding: 8px 12px;
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--text-color);
-    font-size: 0.82rem;
-}
 .as-login-card {
-    width: 100%;
-    padding: clamp(24px, 4vw, 32px);
-    background: rgba(8,12,10,0.85);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-pop), 0 0 60px var(--accent-glow);
+    background: rgba(8,12,10,0.85) !important;
+    border: 1px solid var(--hairline) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-pop), 0 0 60px var(--accent-glow) !important;
     backdrop-filter: blur(16px);
-}
-.as-login-card label {
-    display: block;
-    font-size: 0.76rem;
-    letter-spacing: 0.08em;
-    margin-bottom: 6px;
-}
-.as-login-card input {
-    width: 100%;
-    background: var(--input-bg);
-    color: var(--text-color);
-    border: 1px solid color-mix(in srgb, var(--accent-color) 28%, var(--border-color));
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    margin-bottom: 14px;
-    outline: none;
-    box-sizing: border-box;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.as-login-card input:focus {
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 20%, transparent);
 }
 .as-login-brand .as-wordmark {
     font-family: var(--font-display);
@@ -931,15 +851,7 @@ body.electron-app #admin-overlay {
     letter-spacing: 0.22em;
     font-size: 0.62rem;
 }
-.as-login-mode {
-    text-align: center;
-    margin: 4px 0 20px;
-    font-size: 0.8rem;
-}
 #login-btn, #register-submit-btn {
-    width: 100%;
-    padding: 11px 12px;
-    margin: 4px 0 10px;
     background: linear-gradient(180deg, var(--accent-color), var(--accent-dim)) !important;
     color: #03130a !important;
     border: 0 !important;
@@ -947,35 +859,6 @@ body.electron-app #admin-overlay {
     font-weight: 700 !important;
     letter-spacing: 0.16em !important;
     box-shadow: 0 0 18px var(--accent-glow);
-}
-.as-auth-switch {
-    margin: 0;
-    text-align: center;
-    font-size: 0.8rem;
-    cursor: pointer;
-    color: var(--text-muted);
-}
-.as-auth-switch span {
-    color: var(--accent-color);
-}
-.as-auth-error {
-    color: var(--danger-strong);
-    font-size: 0.8rem;
-    text-align: center;
-    margin: 10px 0 0;
-    min-height: 1.2rem;
-}
-@media (max-width: 860px) {
-    .as-login-shell {
-        --login-shell-gutter: 24px;
-        width: min(460px, calc(100vw - var(--login-shell-gutter)));
-        grid-template-columns: 1fr;
-    }
-    .as-login-hero {
-        border-right: 0;
-        border-bottom: 1px solid color-mix(in srgb, var(--accent-color) 24%, var(--hairline));
-        padding: 20px;
-    }
 }
 
 /* ============================================================================
