@@ -45,6 +45,11 @@
         } else {
             container.appendChild(el);
         }
+        // Timeline content now exists in #messages — hide the welcome/empty-state overlay.
+        // updateEmptyState is otherwise only called at run_start (before any content exists),
+        // and system messages now render as toasts (not inline .message nodes), so nothing
+        // else re-hid it — leaving the welcome page sitting on top of the live timeline.
+        if (deps && deps.updateEmptyState) deps.updateEmptyState();
         scrollBottom();
     }
 

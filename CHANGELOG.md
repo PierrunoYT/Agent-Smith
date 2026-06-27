@@ -1,5 +1,11 @@
 # Agent Smith Changelog
 
+## [46.13.4] - 2026-06-27 — Fix: welcome page covering the activity timeline
+
+### Fixed
+- **The "AGENT SMITH" welcome/empty-state overlay stayed on top of the live activity timeline during a run.** The empty-state is hidden by `updateEmptyState`, which was only called at `run_start` (before any content exists). The timeline inserts its rows into `#messages` but never re-checked the empty-state, and system messages now render as toasts (not inline `.message` nodes), so nothing re-hid the welcome — it sat in front of the live timeline. The timeline now re-checks the empty-state whenever it inserts content (single choke point: `insertBeforeAnchor`). Verified in a real browser: the welcome's `display` goes `flex`→`none` once the first turn renders. Not caused by the preview-approval guard (v46.13.3), which is unrelated and correct.
+
+
 ## [46.13.3] - 2026-06-27 — Code Mode: Preview no longer hijacks plan approval
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

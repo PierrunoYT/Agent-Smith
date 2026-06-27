@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GhostWrk/Agent-Smith/releases/tag/v46.13.3"><img src="https://img.shields.io/badge/version-46.13.3-00c853?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/GhostWrk/Agent-Smith/releases/tag/v46.13.4"><img src="https://img.shields.io/badge/version-46.13.4-00c853?style=flat-square" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platforms" />
   <img src="https://img.shields.io/badge/models-LM%20Studio%20(local)-8b5cf6?style=flat-square" alt="LM Studio" />
@@ -94,12 +94,12 @@ Plain LLM streaming when you do not want tools in the loop.
 
 ## Download
 
-Pre-built **Linux** installers (v46.13.3):
+Pre-built **Linux** installers (v46.13.4):
 
 | Format | File | Notes |
 |--------|------|-------|
-| **AppImage** | [`agent-smith-46.13.3.AppImage`](https://github.com/GhostWrk/Agent-Smith/releases/download/v46.13.3/agent-smith-46.13.3.AppImage) | Portable — `chmod +x` and run |
-| **Debian/Ubuntu** | [`agent-smith_46.13.3_amd64.deb`](https://github.com/GhostWrk/Agent-Smith/releases/download/v46.13.3/agent-smith_46.13.3_amd64.deb) | `sudo dpkg -i` then `sudo apt -f install` if needed |
+| **AppImage** | [`agent-smith-46.13.4.AppImage`](https://github.com/GhostWrk/Agent-Smith/releases/download/v46.13.4/agent-smith-46.13.4.AppImage) | Portable — `chmod +x` and run |
+| **Debian/Ubuntu** | [`agent-smith_46.13.4_amd64.deb`](https://github.com/GhostWrk/Agent-Smith/releases/download/v46.13.4/agent-smith_46.13.4_amd64.deb) | `sudo dpkg -i` then `sudo apt -f install` if needed |
 
 All releases: **[github.com/GhostWrk/Agent-Smith/releases](https://github.com/GhostWrk/Agent-Smith/releases)**
 
@@ -247,5 +247,5 @@ npm run build:renderer
 MIT — see [`LICENSE`](LICENSE).
 
 <p align="center">
-  <sub>Agent Smith v46.13.3 · Built for local models, built for builders.</sub>
+  <sub>Agent Smith v46.13.4 · Built for local models, built for builders.</sub>
 </p>
