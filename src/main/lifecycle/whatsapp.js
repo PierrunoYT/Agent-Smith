@@ -144,3 +144,4 @@ module.exports = function registerWhatsAppIpc(ipcMain, getMainWindow, app, pushE
 };
 
 module.exports.resolveChromeExecutable = resolveChromeExecutable;
+module.exports.SYSTEM_CHROME_CANDIDATES = SYSTEM_CHROME_CANDIDATES;

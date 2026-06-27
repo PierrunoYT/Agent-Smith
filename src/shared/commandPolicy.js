@@ -28,9 +28,11 @@ const RULES = [
     { re: /\bchown\s+-R\b[^\n]*\s\/(?:\s|$)/i, reason: 'recursive chown of /' },
     // Fork bomb
     { re: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, reason: 'fork bomb' },
-    // Pull-and-execute straight from the internet
-    { re: /\b(?:curl|wget|iwr|invoke-webrequest)\b[^|\n]*\|\s*(?:sudo\s+)?(?:sh|bash|zsh|dash|powershell|pwsh|python\d?|node|ruby|perl)\b/i, reason: 'piping a remote download straight into an interpreter' },
-    { re: /\b(?:iex|invoke-expression)\b[^\n]*(?:downloadstring|webclient|invoke-webrequest|iwr|curl|wget)/i, reason: 'IEX of a remote download (PowerShell)' },
+    // Pull-and-execute straight from the internet — pipe to interpreter
+    { re: /\b(?:curl|wget|iwr|invoke-webrequest|irm|invoke-restmethod)\b[^\n]*\|\s*(?:sudo\s+|exec\s+|env\s+)?(?:sh|bash|zsh|dash|source|powershell|pwsh|python\d?|node|ruby|perl|iex|invoke-expression)\b/i, reason: 'piping a remote download straight into an interpreter' },
+    { re: /\b(?:iex|invoke-expression)\b[^\n]*(?:downloadstring|downloadfile|webclient|invoke-webrequest|invoke-restmethod|iwr|irm|curl|wget)/i, reason: 'IEX of a remote download (PowerShell)' },
+    // Two-step: download a script file, then execute it with an interpreter
+    { re: /\b(?:curl|wget)\b[^\n]*(?:-o\s+|--output\s+|-O\s+|>\s*)\S+\.(?:sh|bash|zsh|dash|py|rb|pl|js)\b[^\n]*(&&|;)[^\n]*\b(?:sh|bash|zsh|dash|source|python\d?|node|ruby|perl)\b/i, reason: 'downloading a remote script then executing it with an interpreter' },
     // Power state
     { re: /\b(?:shutdown|reboot|poweroff|halt|init\s+0|init\s+6)\b/i, reason: 'host power-state change' },
 ];
