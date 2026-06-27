@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.13.2] - 2026-06-27 — Code Mode: clear stale preview at run start
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **An empty preview drawer left over from a prior run blocked the plan at the start of a new run** — you had to manually exit preview mode to reach plan mode. A new Code Mode run now clears any lingering preview drawer up front (on `run_start` / `planning_start`), so the planning/plan view is visible immediately. Mid-run previews opened by `show_preview` during execution are unaffected.
+
+
 ## [46.13.1] - 2026-06-27 — Code Mode: auto-repair module/classic script mismatch
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

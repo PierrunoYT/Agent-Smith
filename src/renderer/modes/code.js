@@ -164,6 +164,7 @@
 
         switch (ev.type) {
         case 'planning_start':
+            window.XKSidebarLayout?.exitPreviewMode?.(); // clear any stale preview from a prior run
             planPanel?.renderPlanning({ goal: ev.goal });
             addMessage('system', '**Code Mode:** Planning — read-only exploration before approval.');
             break;
@@ -221,6 +222,7 @@
             addMessage('system', '**Plan rejected.**');
             break;
         case 'run_start':
+            window.XKSidebarLayout?.exitPreviewMode?.(); // a new run supersedes any prior preview drawer
             clearRunStatus();
             activeSessionId = ev.sessionId;
             if (planPanel) {
