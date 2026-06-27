@@ -39,7 +39,7 @@ const CODE_TOOLS = [
         type: 'function',
         function: {
             name: 'write_file',
-            description: 'Create or overwrite a file with its COMPLETE content (up to ~400 lines / 64KB). Prefer this for new files and for rewriting a file you need to restructure — a full overwrite always leaves balanced braces and valid structure. To change a few lines of an existing file, use patch instead.',
+            description: 'Create or overwrite a file with its COMPLETE content (up to ~1000 lines / 64KB). Prefer this for new files and for rewriting a file you need to restructure — a full overwrite always leaves balanced braces and valid structure. To change a few lines of an existing file, use patch instead.',
             parameters: {
                 type: 'object',
                 properties: {

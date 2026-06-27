@@ -1,5 +1,12 @@
 # Agent Smith Changelog
 
+## [46.12.4] - 2026-06-27 — Code Mode: larger single-file writes
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **`write_file` no longer rejects complete source files at 400 lines.** Real multi-file apps have modules of 400–800 lines; a complete 449-line file was bounced with "Content too large (max 400)", forcing weak models into a fragile write-the-first-400-then-append dance that derailed ambitious builds (e.g. a Kanban app whose `utils.js` was rejected, after which the model stalled leaving 8 referenced files uncreated). Raised the line cap to **1000**. This only ever affected *complete* content — real output truncation is still handled separately (finish_reason=length → append chunks), and the 64KB byte cap remains the hard size backstop. Verified by building a 525-line module in a single write.
+
 ## [46.12.3] - 2026-06-27 — Code Mode: no-progress early stop
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

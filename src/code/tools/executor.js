@@ -11,14 +11,14 @@ const { detectContentIssues } = require('../governor/completionGate.js');
 const { assessCommand, blockedResult } = require('../../shared/commandPolicy.js');
 const { advanceStep } = require('../plan/codePlan.js');
 
-// Upper bound on a single write so one tool call can hold a complete, normal source
-// file (the known-good pacman script.js is ~190 lines). Previously this was 60 lines,
-// which made a whole file impossible to write and FORCED weak models onto append_file
-// for revisions — append only concatenates at EOF, so "update gameLoop" became "add a
-// SECOND gameLoop", corrupting the file until every patch hit "Multiple exact matches".
-// Real output truncation is handled separately: streamCompletion surfaces
-// finish_reason="length" and the turn loop retries in small append chunks (turnLoop.js).
-const MAX_WRITE_LINES = 400;
+// Upper bound on a single write so one tool call can hold a COMPLETE source file.
+// This only rejects content that already arrived in full — real output truncation is
+// handled separately (streamCompletion surfaces finish_reason="length" and the turn loop
+// retries in small append chunks). So this cap should be generous enough that a normal
+// multi-file app's modules (often 400–800 lines) are NOT rejected: a 449-line utils.js
+// being bounced at 400 forced weak models into a fragile write-first-400-then-append
+// dance that corrupted files. The 64KB byte cap below is the real size backstop.
+const MAX_WRITE_LINES = 1000;
 const MAX_WRITE_BYTES = 65536;
 const MAX_WRITE_CHARS = 65536;
 const MAX_READ_LINES = 400;

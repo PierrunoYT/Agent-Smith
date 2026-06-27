@@ -87,6 +87,11 @@ test('checkWriteChunkSize rejects oversized write_file payloads', () => {
     // can write a complete file instead of being forced onto the append-fragment path.
     assert.equal(checkWriteChunkSize('line\n'.repeat(200)), null);
     assert.equal(checkWriteChunkSize('ok\n'), null);
+    // Regression: a complete ~449-line module (real multi-file apps have these) must be
+    // accepted — it was previously bounced at the old 400-line cap, derailing the build.
+    assert.equal(checkWriteChunkSize('const x = 1;\n'.repeat(449)), null);
+    assert.equal(checkWriteChunkSize('const x = 1;\n'.repeat(800)), null);
+    assert.ok(MAX_WRITE_LINES >= 1000, 'cap must comfortably hold a normal source module');
 });
 
 test('executor write_file + ledger snapshot', async () => {
