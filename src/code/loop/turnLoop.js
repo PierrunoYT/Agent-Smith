@@ -401,6 +401,17 @@ async function runTurnLoop(ctx) {
         }
 
         const msg = result.message;
+        // One-time, non-blocking advisory: if the model reasons at runtime (emits
+        // reasoning_content / inline <think>), let the user know a coder model is a
+        // better fit for Code Mode. Detected by behavior, not by model name.
+        if (result.sawReasoning && !session.modelAdvised) {
+            session.modelAdvised = true;
+            emit({
+                type: 'model_advisory',
+                level: 'info',
+                message: 'This looks like a reasoning model. Code Mode works with it, but a coder model (e.g. Qwen2.5-Coder) is usually faster and more reliable for builds.'
+            });
+        }
         const extractSchemas = goalImpliesBuildWork(session.goal)
             ? selectToolsForTurn({
                 userPrompt: userPrompt || session.goal,

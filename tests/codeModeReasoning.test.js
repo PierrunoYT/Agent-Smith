@@ -61,12 +61,15 @@ test('reasoning-truncated empty turn retries with a larger budget + brevity nudg
         session.messages.some(m => m.role === 'system' && /Stop reasoning now/i.test(m.content || '')),
         'a brevity nudge was injected for the retry'
     );
+    const advisories = events.filter(e => e.type === 'model_advisory');
+    assert.equal(advisories.length, 1, 'a single model advisory is emitted for a reasoning model');
+    assert.match(advisories[0].message, /coder model/i);
 });
 
 test('a normal (non-reasoning) empty turn does NOT trigger the reasoning guard', async () => {
     const session = mkSession({ projectRoot: tmp('reasoning-neg-'), filesTouched: [] });
     let calls = 0;
-    const { ctx } = ctxFor(session, async () => {
+    const { ctx, events } = ctxFor(session, async () => {
         calls++;
         // finish_reason 'stop' and no reasoning → not the reasoning-truncation case.
         return { message: { role: 'assistant', content: '' }, finishReason: 'stop', sawReasoning: false };
@@ -75,4 +78,5 @@ test('a normal (non-reasoning) empty turn does NOT trigger the reasoning guard',
     await runTurnLoop(ctx);
     assert.notEqual(session.outReserveOverride, 8192, 'must not boost budget for a normal empty reply');
     assert.notEqual(session.reasoningModel, true);
+    assert.ok(!events.some(e => e.type === 'model_advisory'), 'no advisory for a non-reasoning model');
 });

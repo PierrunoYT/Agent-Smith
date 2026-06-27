@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.12.1] - 2026-06-27 — Code Mode: reasoning-model advisory + reasoning auto-collapse
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Added
+- **Reasoning-model advisory.** When Code Mode detects at runtime that the selected model is a reasoning model (emits `reasoning_content` or inline `<think>`), it shows a one-time, non-blocking notice that a coder model (e.g. Qwen2.5-Coder) is recommended for builds. Detected by behavior, not by model name — so it never wrongly blocks a capable model. Code Mode still runs with any model.
+- **Reasoning auto-collapse.** A turn's "Thinking" panel collapses when the next task/turn begins, and each turn's reasoning starts fresh — keeping the timeline readable on long runs.
+
 ## [46.12.0] - 2026-06-27 — Code Mode robustness: anti-freeze, reasoning models, code map
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

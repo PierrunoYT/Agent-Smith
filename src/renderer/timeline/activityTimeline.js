@@ -416,7 +416,11 @@
 
         case 'turn_start':
             ensureTurnHeader(ev.turn);
+            // Collapse the previous task's reasoning when the next task begins, and
+            // start fresh so each turn's "Thinking" shows only that turn's reasoning.
+            collapseThinking();
             thinkingEl = null;
+            streamText = '';
             if (deps.onStatusUpdate) {
                 deps.onStatusUpdate({
                     turn: ev.turn,
@@ -425,6 +429,19 @@
                 });
             }
             break;
+
+        case 'model_advisory': {
+            // Non-blocking, one-time notice (e.g. "this is a reasoning model — a coder
+            // model is recommended"). Persistent row so the user can read it mid-run.
+            const note = document.createElement('div');
+            note.className = 'activity-advisory';
+            note.style.cssText = 'margin:6px 0;padding:7px 10px;border-left:3px solid #d8a657;'
+                + 'background:rgba(216,166,55,0.08);border-radius:4px;font-size:12px;line-height:1.4;color:var(--text-muted,#bbb);';
+            note.textContent = '⚠ ' + (ev.message || 'Model advisory');
+            insertBeforeAnchor(note);
+            scrollBottom();
+            break;
+        }
 
         case 'context_budget':
             if (deps.onStatusUpdate && node) {
