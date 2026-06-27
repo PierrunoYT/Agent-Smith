@@ -171,11 +171,23 @@ if (process.env.XKALIBER_NO_GPU === '1') {
     app.disableHardwareAcceleration();
 }
 
-// Clear GPU Cache on startup to prevent NVIDIA corruption issues
+// Clear GPU Cache on startup to prevent NVIDIA corruption issues.
+// The path is derived from Electron's userData dir, not user input, so it
+// isn't attacker-controlled today — but guard anyway: a future refactor that
+// makes this configurable must not be able to point the recursive `rmSync`
+// outside the app's own data directory.
 const initUserDataPath = app.getPath('userData');
 const gpuCachePath = path.join(initUserDataPath, 'GPUCache');
+function isWithinUserData(target) {
+    const base = path.resolve(initUserDataPath) + path.sep;
+    const resolved = path.resolve(target) + path.sep;
+    return resolved === base || resolved.startsWith(base);
+}
 try {
     if (fs.existsSync(gpuCachePath)) {
+        if (!isWithinUserData(gpuCachePath)) {
+            throw new Error(`Refusing to clear GPUCache: resolved path escapes userData (${gpuCachePath})`);
+        }
         fs.rmSync(gpuCachePath, { recursive: true, force: true });
         console.log('Cleared GPUCache to prevent NVIDIA driver issues.');
     }
