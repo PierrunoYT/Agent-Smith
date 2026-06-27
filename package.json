@@ -26,8 +26,8 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "^28.3.3",
-    "electron-builder": "^24.9.1",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.0"
   },
   "dependencies": {
@@ -99,5 +99,11 @@
       "icon": "build/icon.png",
       "target": "nsis"
     }
+  },
+  "allowScripts": {
+    "electron@42.5.0": true,
+    "esbuild@0.28.1": true,
+    "electron-winstaller@5.4.0": true,
+    "puppeteer@24.40.0": true
   }
 }
