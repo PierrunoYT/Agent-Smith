@@ -1,6 +1,6 @@
 {
   "name": "agent-smith",
-  "version": "46.12.6",
+  "version": "46.12.7",
   "description": "Agent Smith - Full-project local coding agent with durable plan memory, a plugin system, and the Agent Smith persona.",
   "homepage": "https://github.com/dreammuse/agent-smith",
   "main": "main.js",

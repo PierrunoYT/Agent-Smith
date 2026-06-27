@@ -15,7 +15,7 @@ const wv = require('./webValidators.js');
 const { runAcceptance } = require('./acceptance.js');
 const { runSmokeTest } = require('./smokeTest.js');
 const { runProjectRulesForProject } = require('./projectRules.js');
-const { buildNewArtifactBlock, suggestArtifactSubdir, goalWantsPreview } = require('../context/artifactHints.js');
+const { buildNewArtifactBlock, suggestArtifactSubdir, goalWantsPreview, goalImpliesNewArtifacts, detectAppRepo } = require('../context/artifactHints.js');
 const { pickNextMissing } = require('../loop/missingRefGuard.js');
 
 const { isNonTrivialTask } = require('../context/planArtifacts.js');
@@ -146,6 +146,20 @@ async function runPlanTestVerify(projectRoot, planArtifacts) {
     return r.ok ? null : `[PLAN VERIFY FAILED] ${cmd}\n${r.stderr || r.stdout}`;
 }
 
+/** Find an index.html already on disk (root, then an immediate subdir). Lets a reused
+ *  workspace's web entry still be validated even when it wasn't written this run. */
+function findProjectIndexHtml(projectRoot) {
+    const IGNORE = new Set(['node_modules', 'dist', 'build', '.git', '.agentsmith', 'release', 'coverage', '.cache']);
+    try {
+        if (fs.existsSync(path.join(projectRoot, 'index.html'))) return 'index.html';
+        for (const e of fs.readdirSync(projectRoot, { withFileTypes: true })) {
+            if (!e.isDirectory() || e.name.startsWith('.') || IGNORE.has(e.name)) continue;
+            if (fs.existsSync(path.join(projectRoot, e.name, 'index.html'))) return `${e.name}/index.html`;
+        }
+    } catch (e) { /* ignore */ }
+    return null;
+}
+
 async function runValidation(projectRoot, filesTouched, goal, opts = {}) {
     const files = [...new Set((filesTouched || []).filter(Boolean))]
         .filter(rel => fs.existsSync(path.join(projectRoot, rel)));
@@ -165,9 +179,18 @@ async function runValidation(projectRoot, filesTouched, goal, opts = {}) {
     }
 
     // --- web layer ---
-    const htmlRel = files.map(f => f.replace(/\\/g, '/'))
+    let htmlRel = files.map(f => f.replace(/\\/g, '/'))
         .find(f => f.toLowerCase().endsWith('index.html')) ||
         files.map(f => f.replace(/\\/g, '/')).find(f => f.toLowerCase().endsWith('.html'));
+
+    // Workspace reuse: index.html may already be on disk from an earlier turn/run even if
+    // it wasn't (re)written this run. For a web-app goal we MUST still validate it against
+    // disk — otherwise a run that only writes e.g. utils.js falsely passes while index.html
+    // references files that were never created. Skip a host app's own index.html (an
+    // Electron/main.js repo), which is not the deliverable.
+    if (!htmlRel && goalImpliesNewArtifacts(goal) && !detectAppRepo(projectRoot)) {
+        htmlRel = findProjectIndexHtml(projectRoot);
+    }
 
     let acceptance = { applicable: false, checks: [], failed: [] };
     let smoke = { skipped: true, reason: 'no web project', ok: true };

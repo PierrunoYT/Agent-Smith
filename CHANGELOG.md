@@ -1,5 +1,14 @@
 # Agent Smith Changelog
 
+## [46.12.7] - 2026-06-27 — Code Mode: fix false "verified" on reused workspaces
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **CRITICAL: a web build could be falsely reported "✅ COMPLETE (verified)".** The completion gate located the web entry (`index.html`) only among files written in the *current run*. In a reused workspace where `index.html` already existed from an earlier run but this run only wrote a trivial file (e.g. `utils.js`), the gate skipped ALL web checks ("no web project") and passed on whatever parsed — even though `index.html` referenced 7 files that were never created. The gate now also locates an `index.html` on disk (root or an immediate subdir) for a web-app goal and validates its references + smoke test, so a partially-built app correctly reports INCOMPLETE. A host Electron app's own `index.html` is excluded (it isn't the deliverable). Verified against the exact failing scenario.
+
+Known minor limitation: the HTML reference extractor parses only quoted attributes (`src="x.js"`); unquoted attributes are not checked (rare). Also recommended: run each Code Mode build in a **fresh** workspace — reusing one across tasks leaves stale files (and a stale `.agentsmith/PLAN.md`) that confuse the build.
+
 ## [46.12.6] - 2026-06-27 — Code Mode: retry on model stall
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.
