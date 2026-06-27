@@ -1,5 +1,15 @@
 # Agent Smith Changelog
 
+## [46.13.1] - 2026-06-27 — Code Mode: auto-repair module/classic script mismatch
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **The #1 reason built web apps didn't actually run: module-vs-classic script mismatch.** Local models (even coder models like qwen3-coder) routinely write `import`/`export` in `.js` files that `index.html` loads as classic `<script src>` — which throws "Unexpected token 'export'" and the app is dead on load. Code Mode now deterministically strips ES-module syntax from classic-loaded scripts during verification (they share state via the global scope), so the app runs. Proper `type="module"` apps are untouched. Model-independent — no longer relies on the model getting it right.
+
+Verified end-to-end in a real headless browser: a multi-file Kanban app built by qwen3-coder (with constrained decoding) now loads with **zero JS errors**, renders its columns, and a card added through the UI appears in the DOM.
+
+
 ## [46.13.0] - 2026-06-27 — Code Mode: constrained tool-call decoding (opt-in)
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.
