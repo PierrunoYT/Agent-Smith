@@ -56,7 +56,21 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
             if (!pluginManager?.isPluginTool || !pluginManager.isPluginTool(name)) {
                 return { __notFound: true };
             }
-            return await pluginManager.invokeTool(name, args);
+            // Bound the call so a misbehaving plugin tool can't hang the run forever.
+            const TIMEOUT_MS = 120000;
+            let timer;
+            const timeout = new Promise((resolve) => {
+                timer = setTimeout(
+                    () => resolve({ error: `Plugin tool "${name}" timed out after ${TIMEOUT_MS}ms` }),
+                    TIMEOUT_MS
+                );
+                if (timer && typeof timer.unref === 'function') timer.unref();
+            });
+            try {
+                return await Promise.race([pluginManager.invokeTool(name, args), timeout]);
+            } finally {
+                clearTimeout(timer);
+            }
         };
 
         return {

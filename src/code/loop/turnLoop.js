@@ -332,7 +332,11 @@ async function runTurnLoop(ctx) {
         // model can emit a whole source file without being truncated at the window edge.
         // The previous 6144 cap was too small for single-file builds (e.g. a full Pac-Man
         // page) — the reply got chopped mid-CSS and zero files landed.
-        const outReserve = Math.min(8192, Math.max(4096, Math.floor(session.numCtx * 0.25)));
+        // Reply budget. A reasoning model that exhausted the budget on internal
+        // reasoning (and produced no output) bumps session.outReserveOverride so the
+        // retry gets the full ceiling for reasoning + content.
+        const outReserve = session.outReserveOverride
+            || Math.min(8192, Math.max(4096, Math.floor(session.numCtx * 0.25)));
         messages = fitBudget(messages, session.numCtx, outReserve);
 
         const usedTokens = estimateMessages(messages);
@@ -411,6 +415,31 @@ async function runTurnLoop(ctx) {
                 ? pickNextMissing(session.pendingMissingRefs)
                 : null
         });
+
+        // Reasoning-model guard: if the model spent the whole reply budget on internal
+        // reasoning and emitted no content and no tool call (finish_reason === 'length'),
+        // give the next turn the full budget and tell it to stop reasoning and act. This
+        // keeps reasoning models (e.g. gemma-4) from silently looping on empty output —
+        // which presents as a "frozen" run. Code Mode only.
+        const emptyOutput = !(msg.content && msg.content.trim()) && !(msg.tool_calls && msg.tool_calls.length);
+        if (result.sawReasoning && result.finishReason === 'length' && emptyOutput) {
+            session.reasoningModel = true;
+            session.outReserveOverride = 8192;
+            session.reasoningRetries = (session.reasoningRetries || 0) + 1;
+            if (session.reasoningRetries <= 2) {
+                emit({
+                    type: 'reasoning_truncated',
+                    turn: session.turn,
+                    message: 'Model used the entire reply budget reasoning with no output — retrying with a larger budget and a brevity nudge.'
+                });
+                session.messages.push({
+                    role: 'system',
+                    content: 'You spent the entire reply budget on internal reasoning and produced no output. Stop reasoning now: in your next reply, immediately emit the required tool call (e.g. write_file) or the file contents. Keep any reasoning to at most one short sentence.'
+                });
+                continue;
+            }
+            // Exhausted retries: fall through so normal completion/exit logic applies.
+        }
 
         session.messages.push({
             role: 'assistant',

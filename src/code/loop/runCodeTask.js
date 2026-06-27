@@ -13,6 +13,7 @@ const { EarlyStopDetector } = require('../governor/earlyStop.js');
 const { QualityMonitor } = require('../governor/qualityMonitor.js');
 const { resolveInitialPhase } = require('../loop/phases.js');
 const { runTurnLoop } = require('./turnLoop.js');
+const { createRunWatchdog } = require('./runWatchdog.js');
 const { runPlanningPhase } = require('./planningPhase.js');
 const { CodeRunTrace } = require('./codeTrace.js');
 const { markApproved, isExploreStep } = require('../plan/codePlan.js');
@@ -39,13 +40,34 @@ async function executeTurnLoop(opts) {
         ? buildExecDeps(sessionId)
         : Object.assign({}, execDepsIn || {}, { sessionId });
 
+    // Watchdog: emit liveness heartbeats and turn an async stall (silent model, an
+    // unbounded await) into a clean abort + error instead of an invisible freeze.
+    // Cannot interrupt synchronous blocks — those are bounded at their source.
+    const watchdogAbort = new AbortController();
+    let stallReason = null;
+    const watchdog = createRunWatchdog({
+        emit,
+        meta: () => ({ sessionId, run_id: session.runId || sessionId, phase: session.phase, turn: session.turn }),
+        heartbeatMs: Number(process.env.XK_CODE_HEARTBEAT_MS) || 20000,
+        inactivityMs: Number(process.env.XK_CODE_INACTIVITY_MS) || 360000,
+        maxRuntimeMs: Number(process.env.XK_CODE_MAX_RUNTIME_MS) || 1800000,
+        onStall: (reason) => { stallReason = reason; watchdogAbort.abort(); }
+    });
+    const onParentAbort = () => watchdogAbort.abort();
+    if (signal) {
+        if (signal.aborted) watchdogAbort.abort();
+        else signal.addEventListener('abort', onParentAbort, { once: true });
+    }
+
     const wrapEmit = (ev) => {
+        watchdog.touch(); // any real run event = progress
         ev.run_id = session.runId || sessionId;
         ev.sessionId = sessionId;
         emit(ev);
     };
 
     let finalSummary = '';
+    watchdog.start();
     try {
         await runTurnLoop({
             session,
@@ -53,7 +75,7 @@ async function executeTurnLoop(opts) {
             tools: null,
             userPrompt: session.goal,
             emit: wrapEmit,
-            signal,
+            signal: watchdogAbort.signal,
             execDeps,
             planAnchor,
             planArtifacts,
@@ -103,7 +125,11 @@ async function executeTurnLoop(opts) {
             status: session.status
         });
     } catch (e) {
-        if (/aborted/i.test(e.message)) {
+        if (stallReason) {
+            session.status = 'error';
+            session.error = stallReason;
+            wrapEmit({ type: 'error', code: 'WATCHDOG_STALL', message: `Code Mode ${stallReason}` });
+        } else if (/aborted/i.test(e.message)) {
             session.status = 'aborted';
             wrapEmit({ type: 'error', message: 'Run aborted' });
         } else {
@@ -111,6 +137,9 @@ async function executeTurnLoop(opts) {
             session.error = e.message;
             wrapEmit({ type: 'error', message: e.message });
         }
+    } finally {
+        watchdog.stop();
+        if (signal) { try { signal.removeEventListener('abort', onParentAbort); } catch (_) { /* non-fatal */ } }
     }
 
     session.planAnchorState = planAnchor.serialize();

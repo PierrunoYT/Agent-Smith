@@ -90,6 +90,9 @@ async function streamCompletion({
                         const parsedError = JSON.parse(errorBody);
                         detail = parsedError?.error?.message || parsedError?.message || detail;
                     } catch (e) { /* keep raw body */ }
+                    if (/failed to load model|model.*not found|no models? loaded/i.test(detail)) {
+                        return finish(reject, new Error(`Model "${model}" failed to load in LM Studio: ${detail}. Pick a model that loads (check available VRAM) and retry.`));
+                    }
                     finish(reject, new Error(`LM Studio HTTP ${res.statusCode}: ${detail || res.statusMessage || 'request failed'}`));
                 });
                 return;
@@ -98,6 +101,7 @@ async function streamCompletion({
             let content = '';
             let toolCalls = [];
             let finishReason = null;
+            let sawReasoning = false;
 
             res.on('data', (chunk) => {
                 armIdleTimer(req);
@@ -121,7 +125,10 @@ async function streamCompletion({
                     // timeline's "Reasoning" panel. Display-only — NOT added to `content`,
                     // so it isn't re-sent to the model. Without this, Code Mode looks frozen
                     // while a reasoning model (qwen3 etc.) thinks, and reasoning never traces.
-                    if (delta.reasoning_content && onDelta) onDelta(delta.reasoning_content);
+                    if (delta.reasoning_content) {
+                        sawReasoning = true;
+                        if (onDelta) onDelta(delta.reasoning_content);
+                    }
                     if (delta.tool_calls) {
                         for (const tc of delta.tool_calls) {
                             const idx = tc.index ?? 0;
@@ -145,7 +152,8 @@ async function streamCompletion({
                 });
                 finish(resolve, {
                     message: { role: 'assistant', content, tool_calls: toolCalls.length ? toolCalls : undefined },
-                    finishReason
+                    finishReason,
+                    sawReasoning
                 });
             });
         });

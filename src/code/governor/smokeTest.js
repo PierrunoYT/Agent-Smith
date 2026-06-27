@@ -256,7 +256,10 @@ function runSmokeTest(opts) {
     catch (e) { return { skipped: true, reason: 'index.html unreadable', ok: true }; }
     const htmlDir = path.dirname(abs);
 
-    const jsdom = tryRequireJsdom();
+    // Prefer the VM engine: vm.runInContext's timeout (3s) interrupts even a
+    // synchronous infinite loop in the project's JS. jsdom's runScripts:'dangerously'
+    // has no such guard and would block the event loop, so it is opt-in (XK_SMOKE_JSDOM).
+    const jsdom = process.env.XK_SMOKE_JSDOM ? tryRequireJsdom() : null;
     if (jsdom) {
         return runJsdomEngine(jsdom, html, htmlDir, opts.expectedSelectors);
     }
