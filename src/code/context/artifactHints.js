@@ -5,7 +5,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { pickNextMissing } = require('../loop/missingRefGuard.js');
 
 /** Task asks for a new deliverable (game, site, app) rather than editing the host project. */
 function goalImpliesNewArtifacts(goal) {
@@ -96,25 +95,22 @@ function buildWriteNudge(goal, projectRoot) {
 
 /** Urgent nudge when HTML exists but linked CSS/JS files are missing. */
 function buildMissingRefsNudge(missingRefs, goal, projectRoot) {
-    const refs = [...new Set((missingRefs || []).filter(Boolean))];
+    const refs = [...new Set((missingRefs || []).filter(Boolean))].map(r => String(r).replace(/\\/g, '/'));
     if (!refs.length) return '';
-    const next = pickNextMissing(refs) || refs[0];
-    const nextNorm = String(next).replace(/\\/g, '/');
-    const dir = path.posix.dirname(nextNorm);
+    const dir = path.posix.dirname(refs[0]);
     const dirHint = dir && dir !== '.' ? `${dir}/` : '';
     const preview = goalWantsPreview(goal) ? `\nAfter all files exist: show_preview path="${dirHint}index.html".` : '';
     const gameHint = goalIsGame(goal)
-        ? ' Include keyboard input, score updates, game loop, and win/lose logic.'
+        ? ' For a game, include keyboard input, score updates, a game loop, and win/lose logic.'
         : '';
     return [
         '[HARNESS — CREATE MISSING FILES]',
-        'Respond with ONE tool call only — no prose, no HTML.',
-        `NEXT: write_file path="${nextNorm}" with the complete ${/\.css$/i.test(nextNorm) ? 'CSS' : 'JavaScript'}.${gameHint}`,
-        'Do NOT rewrite any .html file — only create the missing file above.',
+        `The HTML links ${refs.length} file(s) that do not exist yet. Create them now with write_file — you MAY emit several write_file calls in THIS one turn to create them all at once.`,
+        `Missing: ${refs.join(', ')}`,
         // The common failure is putting the file in a different folder or under a bare
         // name. The referenced files must be siblings of the HTML that links them.
-        `Write it at EXACTLY that path${dirHint ? ` (same folder \`${dirHint}\` as the HTML that links it)` : ''} — not a bare filename and not in another directory.`,
-        refs.length > 1 ? `Still needed after that (same folder): ${refs.filter(r => r !== next).join(', ')}` : '',
+        `Each must be COMPLETE working code (no placeholders or stubs) written at EXACTLY its path${dirHint ? ` (same folder \`${dirHint}\` as the HTML that links it)` : ''} — not a bare filename and not in another directory.${gameHint}`,
+        'Do NOT rewrite any .html file. Respond with write_file tool calls only — no prose.',
         preview
     ].filter(Boolean).join('\n');
 }

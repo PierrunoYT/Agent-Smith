@@ -1,5 +1,17 @@
 # Agent Smith Changelog
 
+## [46.12.5] - 2026-06-27 — Code Mode: multi-file build reliability
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Changed / Fixed
+- **Multiple files per turn (was one-file-per-turn).** The system prompt and the missing-file recovery nudge previously pushed "ONE file per turn" / "ONE tool call", fragmenting multi-file builds across many turns (each a stall / lose-the-plan risk — the cause of a Kanban build leaving 8 referenced files uncreated). The model is now told it MAY emit several `write_file` calls in one turn; observed batching up to **6 files in a single turn**.
+- **Anti-"lazy" prompting.** The system prompt now demands complete, working code — never placeholder comments, stubs, "..." elisions, or "TODO: implement" in place of real logic.
+- **Web module-style guidance.** For static/offline web apps, instruct classic `<script src>` (no `import`/`export`; share via `window` globals) — ES modules break over `file://` (CORS) and `import`/`export` in a plain script throws a syntax error.
+- Updated the stale "~400 lines" hint in the prompt to ~1000 (matches the write_file cap).
+
+Verified by re-running a multi-file Kanban-class build (GLM in LM Studio): **all** linked files created (was 1 of 8), **zero** dangling references (was 8), batching up to 6 files/turn, and the build reaching `done`. Remaining run-to-run variance is model consistency — the runtime advisory recommends a coder model.
+
 ## [46.12.4] - 2026-06-27 — Code Mode: larger single-file writes
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.
