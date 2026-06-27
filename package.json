@@ -9,10 +9,11 @@
     "email": "dreammuseltd@gmail.com"
   },
   "scripts": {
-    "prestart": "node scripts/build-renderer.js",
+    "prestart": "node scripts/check-native.js && node scripts/build-renderer.js",
     "start": "electron .",
-    "predist": "node scripts/build-renderer.js",
+    "predist": "node scripts/check-native.js && node scripts/build-renderer.js",
     "dist": "electron-builder",
+    "fix-native": "node scripts/check-native.js",
     "test": "node --test \"tests/*.test.js\"",
     "harness-eval-regression": "node --test \"tests/harness-eval/regression/*.test.js\"",
     "harness-eval-capability": "node --test \"tests/harness-eval/capability/*.test.js\"",
