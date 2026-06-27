@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.13.3] - 2026-06-27 — Code Mode: Preview no longer hijacks plan approval
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **The Preview drawer auto-opened during planning/approval and blocked the Build Plan / "Approve & Run" controls.** Root cause: `show_preview` is a read tool, so the model can call it during the PLANNING phase (read-only exploration); the resulting preview event opened the drawer over the plan sidebar (a stale preview from a prior run could too). The renderer now **suppresses the automatic preview-drawer open while the plan is in the planning/approval phase** — the approval UI keeps priority. Preview content is still rendered (a later manual open shows it), and the drawer auto-opens normally once execution begins. Manual preview, `show_preview` during execution, and `browser_verify` are all unaffected. Pairs with the prior fix that clears a stale preview at run start.
+
+
 ## [46.13.2] - 2026-06-27 — Code Mode: clear stale preview at run start
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

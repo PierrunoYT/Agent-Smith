@@ -11,6 +11,22 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // Plan-approval priority: never AUTO-open the preview drawer over the Build Plan while
+    // Code Mode is planning or awaiting approval — the approval controls must stay reachable
+    // (show_preview is a read tool the model can call during planning). The content is still
+    // rendered into the panel, so manual open / execution-time previews show it; only the
+    // automatic drawer takeover is suppressed. Manual open and post-approval previews work.
+    function previewAutoOpenBlocked() {
+        try {
+            const phase = window.XKCodePlanPanel?.getState?.().phase;
+            return phase === 'planning' || phase === 'approval';
+        } catch (e) { return false; }
+    }
+    function maybeEnterPreview(label) {
+        if (previewAutoOpenBlocked()) return;
+        window.XKSidebarLayout?.enterPreviewMode?.({ label });
+    }
+
     // The preview HTTP route (/preview/*) is auth-gated, but the iframe/img load is a
     // cross-origin request that can't carry the session cookie — so it 401s and renders
     // blank. The desktop renderer holds the session token; append it as ?token= (the
@@ -48,7 +64,7 @@
                 ${toolbarHtml(true)}
             </div>`;
         wireToolbar(ev);
-        window.XKSidebarLayout?.enterPreviewMode?.({ label: ev.relPath || 'live' });
+        maybeEnterPreview(ev.relPath || 'live');
     }
 
     function renderSnapshot(ev) {
@@ -66,7 +82,7 @@
                 ${toolbarHtml(false)}
             </div>`;
         wireToolbar(ev);
-        window.XKSidebarLayout?.enterPreviewMode?.({ label: 'snapshot' });
+        maybeEnterPreview('snapshot');
     }
 
     function renderSourcePicker(ev) {
@@ -85,7 +101,7 @@
                 ${toolbarHtml(false)}
             </div>`;
         wireToolbar(ev);
-        window.XKSidebarLayout?.enterPreviewMode?.({ label: 'pick' });
+        maybeEnterPreview('pick');
         loadSources(ev.previewId);
     }
 
