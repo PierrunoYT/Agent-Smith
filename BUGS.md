@@ -329,7 +329,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — phase compaction can drop tool results from multi-tool assistant turns.** `collectRecentToolPairs` only preserves a `tool` message when the immediately previous message is an `assistant` with `tool_calls`. For an assistant turn that emits multiple tool calls followed by multiple `tool` messages, only the first adjacent pair is kept and later tool results are skipped during compaction. This can remove relevant recent tool output at phase transitions. Fix: group all consecutive `tool` messages following each assistant `tool_calls` message, or match by `tool_call_id` when present. Related code: `src/code/context/phaseCompact.js:15-27`.
 
 ### `src/code/context/planAnchor.js`
 
@@ -341,7 +341,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — default Final milestone is not parsed as a milestone with verify command.** `defaultPlanContent` writes `- [ ] **Final: all checks pass** — verify: \`harness completion gate\`` without the `| verify:` separator required by `MILESTONE_RE`. Because M1/M2 do match the strict regex, `reloadMilestones` never falls back to `MILESTONE_SIMPLE`, so the Final milestone is omitted entirely from `this.milestones`. Result: long-horizon plans may track only M1/M2 and never expose/advance the final verification milestone. Fix: make the default Final line use `| verify: ...`, or loosen `MILESTONE_RE` to accept both `| verify:` and `— verify:` consistently. Related code: `src/code/context/planArtifacts.js:15-18`, `src/code/context/planArtifacts.js:61-63`, `src/code/context/planArtifacts.js:168-194`.
 
 ### `src/code/context/symbolMap.js`
 
@@ -367,13 +367,13 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — game acceptance can count score initialization as a score update.** `scoreMutated` matches any assignment to `score`, including initial declarations like `let score = 0`, and `scoreShown` passes if an HTML element id contains `score`. A static game with a score element and initial score assignment can pass the `score updates` acceptance check without ever changing or re-rendering score during gameplay. Fix: distinguish initialization from runtime mutation/rendering, e.g. require `score +=`, `score++`, assignment inside an event/loop/collision handler, or DOM text update that references a changed score value. Related code: `src/code/governor/acceptance.js:53-60`.
 
 ### `src/code/governor/completionGate.js`
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — web validation follows HTML script/style references outside the project root.** `runValidation` resolves each non-HTTP HTML `script`/`link` reference with `path.resolve(htmlDir, ref)` and later reads those resolved files into `combinedCss` / `combinedJs` if they exist, without checking that the resolved path remains inside `projectRoot`. A generated `index.html` containing `../` references could make Code Mode validation read files outside the workspace, conflicting with Code Mode's project-root containment model. Fix: reject or skip refs whose resolved absolute path is outside `projectRoot`, and report a validation error instead of reading them. Related code: `src/code/governor/completionGate.js:188-217`.
 
 ### `src/code/governor/earlyStop.js`
 
