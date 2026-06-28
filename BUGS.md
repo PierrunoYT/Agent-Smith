@@ -651,7 +651,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — SSE broadcast ignores backpressure from slow clients.** `broadcast` writes every event frame to every connected `ServerResponse` and only removes clients when `write()` throws. If a web/mobile client stops reading but keeps the TCP connection open, `res.write(frame)` can return `false` and Node will buffer subsequent frames in memory indefinitely. Frequent `code-event`/resource updates could therefore let a slow client cause avoidable memory growth. Fix: handle `write()` returning `false` by pausing/dropping that client until `drain`, removing it after a timeout, and/or capping queued bytes/client count. Related code: `src/main/server/sseHub.js:35-50`, `tests/sseHub.test.js:25-33`.
 
 ## Batch 6 — Main process services
 
