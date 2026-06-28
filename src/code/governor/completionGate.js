@@ -16,7 +16,7 @@ const { runAcceptance } = require('./acceptance.js');
 const { runSmokeTest } = require('./smokeTest.js');
 const { runProjectRulesForProject } = require('./projectRules.js');
 const { buildNewArtifactBlock, suggestArtifactSubdir, goalWantsPreview, goalImpliesNewArtifacts, detectAppRepo } = require('../context/artifactHints.js');
-const { normalizeClassicScriptModules } = require('./webModuleNormalize.js');
+const { normalizeWebProject } = require('./webModuleNormalize.js');
 const { pickNextMissing } = require('../loop/missingRefGuard.js');
 
 const { isNonTrivialTask } = require('../context/planArtifacts.js');
@@ -200,11 +200,11 @@ async function runValidation(projectRoot, filesTouched, goal, opts = {}) {
 
     if (htmlRel) {
         hasHtml = true;
-        // Deterministic repair: local models (even coder models) routinely write
-        // import/export in .js files that index.html loads as CLASSIC <script>, which
-        // throws at runtime. Strip the module syntax so the app actually runs, before the
-        // reference/smoke checks below evaluate it. No-op for proper type=module apps.
-        try { normalizeClassicScriptModules(projectRoot, htmlRel); } catch (e) { /* non-fatal */ }
+        // Deterministic repair of inconsistent multi-file wiring (the #1 reason a "built"
+        // app doesn't run on local models): classic <script> + import/export, OR type="module"
+        // + code that relies on window.* globals that module scope never sets. Make it actually
+        // runnable before the reference/smoke checks evaluate it. Real ES-module apps untouched.
+        try { normalizeWebProject(projectRoot, htmlRel); } catch (e) { /* non-fatal */ }
         const htmlAbs = path.join(projectRoot, htmlRel);
         const htmlDir = path.dirname(htmlAbs);
         combinedHtml = readSafe(htmlAbs) || '';

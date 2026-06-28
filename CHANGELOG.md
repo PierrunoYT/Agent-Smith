@@ -1,5 +1,17 @@
 # Agent Smith Changelog
 
+## [46.14.0] - 2026-06-27 — Code Mode: deterministically repair multi-file web wiring
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **The #1 reason a "built" multi-file app didn't actually run: inconsistent module/global wiring.** Local/coder models mix strategies unpredictably. The verification step now deterministically repairs both failure classes before judging the build:
+  1. classic `<script>` + ES-module syntax (`import`/`export`) → strip the syntax (already shipped in 46.13.1), and
+  2. **`type="module"` + code that relies on `window.*` globals** (e.g. `const App = {}` referenced as `window.App` — module scope means `window.App` is never set, so the app dies on load with "Cannot read properties of undefined") → downgrade the tags to classic and expose the referenced top-level declarations on `window`.
+
+  Real ES-module apps (files that `import` each other) are detected and left untouched. Verified in a real browser, before vs after on the exact failure: `window.App` `undefined`→`object`, columns `0`→`3`, buttons `0`→`1`, errors → none. Tests: `webNormalizeProject.test.js`. Suite 454/454.
+
+
 ## [46.13.4] - 2026-06-27 — Fix: welcome page covering the activity timeline
 
 ### Fixed
