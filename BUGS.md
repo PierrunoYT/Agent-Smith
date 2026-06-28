@@ -659,7 +659,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — action log reports success even when persistence fails.** The action log is documented as durable audit/undo storage, but `save()` swallows every `fs.writeFileSync` error and `record()` still returns a fresh id. If the userData directory is non-writable, full, or otherwise failing, Agent Mode can perform consequential actions while the audit trail and undo metadata exist only in memory and disappear on restart, with no warning to the caller/user. Fix: make `save()` return/throw errors and surface persistence failures from `record`, or mark entries as volatile and warn the user that the trust layer is not durable. Related code: `src/main/services/actionLog.js:30`, `src/main/services/actionLog.js:34-48`.
 
 ### `src/main/services/auth.js`
 
@@ -671,31 +671,32 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — model-supplied browser verification checks can hang indefinitely.** `browser_verify` accepts arbitrary JavaScript expressions from the model and executes each one with `webContents.executeJavaScript(...)`, but only the page load has a timeout. A check such as `while(true){}` or a never-resolving promise can leave `run()` awaiting forever, preventing the `finally` block from destroying the hidden BrowserWindow and stalling the Code Mode run. Fix: wrap each check in a timeout/Abort-like race, avoid awaiting arbitrary promises, and destroy the window on timeout. Related code: `src/main/services/browserVerify.js:59-70`, `src/main/services/browserVerify.js:74-94`, `src/code/tools/schemas.js:147-158`.
 
 ### `src/main/services/changeLedger.js`
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — snapshot failures can turn existing-file edits into destructive revert deletes.** `snapshotBefore` wraps access, file read, and snapshot write in one broad `try/catch`; any failure sets `existed=false` and still records a manifest entry. If the target file exists but reading it or writing the snapshot fails (permissions, EISDIR, disk full, transient IO), the later edit/delete can proceed while `revertAll` treats the path as newly created and unlinks it instead of restoring original content. Directory deletes hit this path because `readFile(directory)` throws, so the ledger cannot restore them but records them as non-existing. Fix: distinguish "target did not exist" from "snapshot failed", abort the mutation on snapshot failure, and mark unsupported directory snapshots as audit-only rather than `existed:false`. Related code: `src/main/services/changeLedger.js:45-70`, `src/main/services/changeLedger.js:187-207`.
+- **LOW — created directories are not reverted by Revert All.** `recordCreate` records only a path/action, and `revertAll` removes created entries with `fsPromises.unlink(entry.path)`. If a tool records creation of a directory, or a file creation also creates new parent directories, Revert All cannot remove the directory tree; `unlink` on a directory reports `EISDIR`, and parent directories created solely for the run are left behind. Fix: record entry type (`file`/`dir`) and remove created directories with `rm({recursive:true})`, or track and prune empty parent directories created by file writes. Related code: `src/main/services/changeLedger.js:73-86`, `src/main/services/changeLedger.js:195-201`, `src/code/tools/executor.js:236-237`.
 
 ### `src/main/services/editEngine.js`
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — `applyPatch` silently ignores all but the first file in a unified diff.** `applyPatchToFile` parses every file header in a patch but applies only `parsed[0]`, and `EditEngine.applyPatch` writes that result to the separately supplied `filePath`. A multi-file patch can therefore report success while dropping every later file hunk, and a patch whose first header names a different file can be applied to the caller's `filepath` anyway. Fix: reject multi-file patches in `applyPatch`, verify the parsed patch path matches `filePath`, or implement atomic multi-file patch application with per-file ledger snapshots. Related code: `src/main/services/editEngine.js:110-144`, `src/shared/editFormats.js:165-174`.
 
 ### `src/main/services/lmStudioManager.js`
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — failed LM Studio context reload can unload the user's working model.** `ensureNow` first runs estimate-only probes, then unloads the currently loaded model, then attempts the real `lms load` for the selected context. If that final load fails (CLI error, transient LM Studio failure, model path issue), the error propagates to IPC after the previous loaded instance has already been unloaded, leaving the user with no working model and no rollback attempt. Fix: load the replacement before unloading when LM Studio supports it, or on load failure retry loading the previously reported `loadedContext`/parallel settings before returning the error. Related code: `src/main/services/lmStudioManager.js:178-193`, `src/main/ipc/lmStudio.js:21-30`.
 
 ### `src/main/services/memory.js`
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — memory store/clear report success even when persistence fails.** `saveJSON` returns `false` on write errors, but `storeVector` ignores that return value and still returns `{ success:true }` after pushing the vector in memory; `clearMemory` likewise returns `true` regardless of whether the emptied database was written. If the userData directory is non-writable or full, the UI/model can believe memory was saved or wiped while the change is lost on restart. Fix: propagate `saveJSON` failures from `storeVector`/`clearMemory` and surface a warning to callers. Related code: `src/main/services/memory.js:125-136`, `src/main/services/memory.js:231-244`.
 
 ### `src/main/services/pluginHost.js`
 
