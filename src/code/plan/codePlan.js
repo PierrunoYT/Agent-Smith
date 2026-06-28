@@ -4,7 +4,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { goalImpliesNewArtifacts } = require('../context/artifactHints.js');
+const { goalImpliesNewArtifacts, goalIsGame } = require('../context/artifactHints.js');
 
 function stepId() {
     return `s_${crypto.randomBytes(3).toString('hex')}`;
@@ -53,15 +53,32 @@ function createPlan(goal, steps) {
     };
 }
 
+/** Build steps for a new GAME (game-specific wording is appropriate here). */
+function gameBuildSteps() {
+    return [
+        { id: stepId(), title: 'Create required files (HTML, CSS, JS)', status: 'active' },
+        { id: stepId(), title: 'Implement game logic — input, game loop, win/lose, scoring', status: 'pending' },
+        { id: stepId(), title: 'Verify game behavior and show preview', status: 'pending' }
+    ];
+}
+
+/** Build steps for a generic interactive web app (NO game-specific wording). */
+function webAppBuildSteps() {
+    return [
+        { id: stepId(), title: 'Create HTML structure and responsive styling', status: 'active' },
+        { id: stepId(), title: 'Implement app state and localStorage persistence', status: 'pending' },
+        { id: stepId(), title: 'Implement core interactions (add/edit/delete, filters, totals)', status: 'pending' },
+        { id: stepId(), title: 'Verify interactive app behavior and linked assets, then show preview', status: 'pending' }
+    ];
+}
+
 function defaultPlan(goal) {
     const g = String(goal || '').toLowerCase();
+    // New deliverable: branch by task type so a budget tracker doesn't get game wording.
     if (goalImpliesNewArtifacts(goal)) {
         return {
             goal: String(goal || '').trim(),
-            steps: [
-                { id: stepId(), title: 'Create required files (HTML, CSS, JS)', status: 'active' },
-                { id: stepId(), title: 'Verify game logic and show preview', status: 'pending' }
-            ],
+            steps: goalIsGame(goal) ? gameBuildSteps() : webAppBuildSteps(),
             currentStepIndex: 0,
             approvedAt: null
         };

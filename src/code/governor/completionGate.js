@@ -15,7 +15,7 @@ const wv = require('./webValidators.js');
 const { runAcceptance } = require('./acceptance.js');
 const { runSmokeTest } = require('./smokeTest.js');
 const { runProjectRulesForProject } = require('./projectRules.js');
-const { buildNewArtifactBlock, suggestArtifactSubdir, goalWantsPreview, goalImpliesNewArtifacts, detectAppRepo } = require('../context/artifactHints.js');
+const { buildNewArtifactBlock, suggestArtifactSubdir, goalWantsPreview, goalImpliesNewArtifacts, detectAppRepo, goalIsGame } = require('../context/artifactHints.js');
 const { normalizeWebProject } = require('./webModuleNormalize.js');
 const { pickNextMissing } = require('../loop/missingRefGuard.js');
 
@@ -446,7 +446,9 @@ function formatGateMessage(result, goal, projectRoot) {
                 : []),
             '',
             'Do NOT rewrite index.html again — it already exists and is fine.',
-            'For a game: keyboard input, score updates, game loop (requestAnimationFrame/setInterval), win/lose state.'
+            goalIsGame(goal)
+                ? 'For a game: keyboard input, score updates, game loop (requestAnimationFrame/setInterval), win/lose state.'
+                : 'Each .js must contain COMPLETE working app behavior (event handlers, state, persistence) — no placeholders.'
         ].filter(Boolean);
         if (other.length) {
             lines.push('', 'Also still failing (fix after the files exist):', ...other.map(m => `  - ${m}`));

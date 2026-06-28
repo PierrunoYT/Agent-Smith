@@ -144,6 +144,7 @@ function buildContinueAfterRecoveryNudge(goal, htmlRel, previewOpened) {
 
 module.exports = {
     goalImpliesNewArtifacts,
+    goalIsGame,
     suggestArtifactSubdir,
     detectAppRepo,
     goalWantsPreview,

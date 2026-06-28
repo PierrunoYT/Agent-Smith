@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.16.3] - 2026-06-28 — Code Mode: task-appropriate plan wording (no game language for non-games)
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **Non-game web app tasks no longer get game-specific plan wording.** The fallback plan (`codePlan.defaultPlan`) hardcoded "Verify game logic and show preview" for EVERY new-artifact build, so a "Personal Budget Tracker" showed a "Verify game logic" step. `defaultPlan` now branches by task type: a game gets game steps (input/game loop/win-lose — appropriate), while a generic web app gets neutral steps — "Create HTML structure and responsive styling", "Implement app state and localStorage persistence", "Implement core interactions (add/edit/delete, filters, totals)", "Verify interactive app behavior and linked assets, then show preview". Browser preview is preserved for both. Also gated the "For a game: …" completion-gate hint behind `goalIsGame` (non-games get a neutral "complete app behavior" hint), and neutralized two Pac-Man examples that appeared in generic prompts (the system-prompt CSS/JS class example and a write_file error example). Game/Pac-Man prompts still get game wording. Tests: `planTaskType.test.js`.
+
+
 ## [46.16.2] - 2026-06-28 — Code Mode: proactive asset-completion recovery
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

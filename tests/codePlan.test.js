@@ -59,7 +59,8 @@ test('createPlan replaces explore-first step for new artifact goals', () => {
 test('defaultPlan for new artifact skips explore', () => {
     const plan = defaultPlan('Create a web based pac-man game');
     assert.match(plan.steps[0].title, /Create required files/i);
-    assert.equal(plan.steps.length, 2);
+    assert.doesNotMatch(plan.steps[0].title, /explore/i);
+    assert.equal(plan.steps[0].status, 'active');
 });
 
 test('stepProgress and context block reflect state', () => {

@@ -213,7 +213,7 @@ async function executeTool(name, args, deps) {
         }
         case 'write_file': {
             if (!a.path || !String(a.path).trim()) {
-                return { error: 'write_file requires a "path" (e.g. {"path":"pacman/script.js","content":"..."}). You sent no path — retry with both path and the full file content.' };
+                return { error: 'write_file requires a "path" (e.g. {"path":"src/app.js","content":"..."}). You sent no path — retry with both path and the full file content.' };
             }
             const chunkErr = checkWriteChunkSize(a.content);
             if (chunkErr) return chunkErr;
