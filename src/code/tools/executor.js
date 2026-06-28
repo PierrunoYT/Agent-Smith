@@ -343,7 +343,7 @@ async function executeTool(name, args, deps) {
         case 'run_command': {
             const cwd = projectContext.getRoot();
             const cmd = a.command;
-            const verdict = assessCommand(cmd);
+            const verdict = assessCommand(cmd, { projectRoot: projectContext.projectRoot || cwd, cwd });
             if (!verdict.allowed) return blockedResult(cmd, verdict.reason);
             if (a.is_background) {
                 return deps.runBackgroundCommand(cmd, cwd, sessionId);

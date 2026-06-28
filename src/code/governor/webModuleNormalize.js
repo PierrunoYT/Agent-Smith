@@ -14,6 +14,20 @@ const fs = require('fs');
 const path = require('path');
 const wv = require('./webValidators.js');
 
+/**
+ * Write a harness repair to disk THROUGH the change ledger so "Revert All" can undo it.
+ * The ledger snapshot reads the current (pre-write) content, so it must be awaited before
+ * the write. When no ledger is provided (tests, non-run callers) it writes directly.
+ */
+async function ledgerWrite(abs, content, opts) {
+    const cl = opts && opts.changeLedger;
+    const id = opts && opts.sessionId;
+    if (cl && id && typeof cl.snapshotBefore === 'function') {
+        try { await cl.snapshotBefore(id, abs, 'edit'); } catch (e) { /* non-fatal */ }
+    }
+    fs.writeFileSync(abs, content, 'utf8');
+}
+
 /** Strip ES-module syntax, turning a module file into a valid classic script. Pure. */
 function stripEsModuleSyntax(code) {
     const before = String(code);
@@ -40,7 +54,7 @@ function htmlIsClassic(html) {
  * If index.html uses classic scripts, strip module syntax from its referenced local .js
  * files so the app runs. Returns the list of repaired file paths (relative to root).
  */
-function normalizeClassicScriptModules(projectRoot, htmlRel) {
+async function normalizeClassicScriptModules(projectRoot, htmlRel, opts) {
     const fixed = [];
     try {
         const htmlAbs = path.join(projectRoot, htmlRel);
@@ -56,7 +70,7 @@ function normalizeClassicScriptModules(projectRoot, htmlRel) {
             if (!/^[ \t]*(import|export)\b/m.test(orig)) continue; // nothing to strip
             const { code, changed } = stripEsModuleSyntax(orig);
             if (changed) {
-                fs.writeFileSync(abs, code, 'utf8');
+                await ledgerWrite(abs, code, opts);
                 fixed.push(path.relative(projectRoot, abs).split(path.sep).join('/'));
             }
         }
@@ -130,7 +144,7 @@ function exposeWindowGlobals(code, windowRefs) {
  *
  * Returns the list of repaired files (relative paths). Pure I/O; idempotent.
  */
-function normalizeWebProject(projectRoot, htmlRel) {
+async function normalizeWebProject(projectRoot, htmlRel, opts) {
     const fixed = [];
     try {
         const htmlAbs = path.join(projectRoot, htmlRel);
@@ -163,11 +177,11 @@ function normalizeWebProject(projectRoot, htmlRel) {
             let code = moduleIntent ? orig : stripEsModuleSyntax(orig).code;
             code = exposeWindowGlobals(code, windowRefs).code;
             if (code !== orig) {
-                fs.writeFileSync(jsAbs[i], code, 'utf8');
+                await ledgerWrite(jsAbs[i], code, opts);
                 fixed.push(path.relative(projectRoot, jsAbs[i]).split(path.sep).join('/'));
             }
         }
-        if (htmlChanged) fs.writeFileSync(htmlAbs, html, 'utf8');
+        if (htmlChanged) await ledgerWrite(htmlAbs, html, opts);
     } catch (e) { /* non-fatal */ }
     return fixed;
 }

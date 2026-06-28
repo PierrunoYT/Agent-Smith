@@ -1,5 +1,17 @@
 # Agent Smith Changelog
 
+## [46.21.0] - 2026-06-28 — Code Mode security hardening (autonomous run_command + path containment)
+
+Code Mode only. From the aggressive audit: after plan approval Code Mode runs tools autonomously, and the containment had holes. Closed the three most serious.
+
+### Security
+- **run_command** (`commandPolicy.js`): replaced the thin denylist with a real guardrail. It now blocks host-destructive ops, **privilege escalation (sudo)**, access to **home dotfiles / credentials / system secrets** (~/.ssh, ~/.aws, /etc/shadow, id_rsa, …), **raw network sockets** (/dev/tcp), **inline interpreter RCE wrappers** (`node -e`/`python -c` that spawn processes or open sockets), and any **destructive op or redirect whose target path escapes the project root**. Legitimate in-project dev commands (npm/node/python/git/test runners, deletes/redirects inside the project, package downloads) still run, so the agent stays autonomous. The project root is now threaded into the policy.
+- **Path containment** (`projectContext.resolvePath`): made symlink-safe. The previous check was purely lexical, so a symlink whose name sat inside the root but pointed outside passed and writes followed it out. resolvePath now resolves the real path of the deepest existing ancestor and refuses any path whose real target escapes the real project root — the hard boundary the file tools rely on.
+- **Change-ledger integrity** (`webModuleNormalize.js`): the gate's deterministic web-wiring repair (ES-module ↔ classic-script normalization) rewrote the user's .js/.html via direct fs writes, so "Revert All" could not undo them. It now snapshots each file through the change ledger before writing (threaded from the run); with no ledger (tests) it writes directly as before.
+
+Verified: +4 security regression tests (blocks every audited bypass, allows legit in-project commands, refuses symlink escape, confirms the repair snapshots the ORIGINAL content before writing). Suite 564/564, harness-eval 10/10, harness-security 6/6.
+
+
 ## [46.20.0] - 2026-06-28 — Code Mode builds ANYTHING (gate no longer false-blocks correct code)
 
 Code Mode only. An aggressive audit found the completion gate was overfit to web/CRUD apps and false-BLOCKED correct code — a normal keyboard game produced 6 bogus blockers and could never pass. Fixed so Code Mode accepts correct projects of any kind (games, generic web apps, scripts, CLIs, libraries) while still catching genuinely broken output.

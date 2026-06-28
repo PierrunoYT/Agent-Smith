@@ -24,7 +24,7 @@ test('helpers: window refs + top-level decls + tag downgrade', () => {
 });
 
 // The exact failure from the broken build: type="module" + `const App` used as `window.App`.
-test('repairs type=module app that relies on window.* globals (the real failure)', () => {
+test('repairs type=module app that relies on window.* globals (the real failure)', async () => {
     const root = mkproj({
         'index.html':
             '<!doctype html><html><body><div id="app"></div>' +
@@ -33,7 +33,7 @@ test('repairs type=module app that relies on window.* globals (the real failure)
             '</body></html>',
         'src/app.js': 'const App = {\n  init() { document.getElementById("app").textContent = "ok"; }\n};\n'
     });
-    const fixed = normalizeWebProject(root, 'index.html');
+    const fixed = await normalizeWebProject(root, 'index.html');
     assert.ok(fixed.includes('src/app.js'), 'app.js repaired');
 
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -50,48 +50,48 @@ test('repairs type=module app that relies on window.* globals (the real failure)
     assert.equal(typeof ctx.window.App, 'object', 'window.App is defined after running the script');
 });
 
-test('leaves a REAL ES-module app (files import each other) untouched', () => {
+test('leaves a REAL ES-module app (files import each other) untouched', async () => {
     const root = mkproj({
         'index.html': '<!doctype html><html><body><script type="module" src="app.js"></script></body></html>',
         'app.js': "import { State } from './state.js';\nState.go();\n",
         'state.js': 'export const State = { go() {} };\n'
     });
     const before = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-    const fixed = normalizeWebProject(root, 'index.html');
+    const fixed = await normalizeWebProject(root, 'index.html');
     assert.deepEqual(fixed, []);
     assert.equal(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), before);
 });
 
 // The E2E build failure: a prior gate pass downgraded the tags to classic, but the files
 // still use import/export wiring -> "Unexpected token 'export'". Must re-upgrade to module.
-test('re-upgrades to type=module when files use import-wiring but tags were classic', () => {
+test('re-upgrades to type=module when files use import-wiring but tags were classic', async () => {
     const root = mkproj({
         'index.html': '<!doctype html><html><body><div id="x"></div>' +
             '<script src="src/state.js"></script><script src="src/app.js"></script></body></html>',
         'src/state.js': 'export const State = { v: 7 };\n',
         'src/app.js': "import { State } from './state.js';\ndocument.getElementById('x').textContent = State.v;\n"
     });
-    normalizeWebProject(root, 'index.html');
+    await normalizeWebProject(root, 'index.html');
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     assert.equal((html.match(/type="module"/g) || []).length, 2, 'both tags re-upgraded to module');
     assert.match(fs.readFileSync(path.join(root, 'src/app.js'), 'utf8'), /\bimport\b/, 'import wiring kept');
     // idempotent: a second pass leaves it consistent
-    const second = normalizeWebProject(root, 'index.html');
+    const second = await normalizeWebProject(root, 'index.html');
     assert.deepEqual(second, []);
 });
 
-test('still fixes classic <script> + export, and is idempotent', () => {
+test('still fixes classic <script> + export, and is idempotent', async () => {
     const root = mkproj({
         'index.html': '<!doctype html><html><body><script src="a.js"></script>' +
             '<script>window.onload=()=>window.Thing.run();</script></body></html>',
         'a.js': 'export const Thing = { run() {} };\n'
     });
-    const first = normalizeWebProject(root, 'index.html');
+    const first = await normalizeWebProject(root, 'index.html');
     assert.ok(first.includes('a.js'));
     const aJs = fs.readFileSync(path.join(root, 'a.js'), 'utf8');
     assert.doesNotMatch(aJs, /\bexport\b/);
     assert.match(aJs, /window\.Thing\s*=\s*Thing;/);
     // running again changes nothing
-    const second = normalizeWebProject(root, 'index.html');
+    const second = await normalizeWebProject(root, 'index.html');
     assert.deepEqual(second, []);
 });

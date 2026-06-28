@@ -78,7 +78,7 @@ async function maybeProactiveRuntimeCheck(session, execDeps, emit) {
         st.checks++;
 
         // Auto-fix wiring first, then load it for real.
-        try { normalizeWebProject(projectRoot, htmlRel); } catch (e) { /* non-fatal */ }
+        try { await normalizeWebProject(projectRoot, htmlRel, { changeLedger: execDeps && execDeps.changeLedger, sessionId: session.id }); } catch (e) { /* non-fatal */ }
         const rt = await execDeps.runtimeVerify(projectRoot, htmlRel);
         if (!rt || rt.skipped || rt.ok) {
             emit({ type: 'runtime_check', ok: true, turn: session.turn });

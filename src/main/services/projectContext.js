@@ -182,6 +182,18 @@ class ProjectContext {
                         `Retry immediately with the relative path; do not stop or narrate this error.`
                     };
                 }
+                // Symlink-safe containment: a path that is lexically inside the root can still
+                // point OUTSIDE it through a symlink (the link's name sits inside; its target
+                // does not). Resolve the real path of the deepest existing ancestor and verify
+                // the real target is still within the real root. This is the hard boundary —
+                // the lexical check above only stops `..`/absolute inputs.
+                const realEscape = this._resolvesOutsideRealRoot(resolved);
+                if (realEscape) {
+                    return { error:
+                        `Path "${inputPath}" resolves outside the project root via a symlink (real target: ${realEscape}). ` +
+                        `Refusing to read/write outside ${this.projectRoot}. Use a real path inside the project.`
+                    };
+                }
             }
         } else if (!allowOutsideBeforeRoot && path.isAbsolute(expanded)) {
             // Before root is set, allow absolute paths only if they exist (for discovery)
@@ -191,6 +203,32 @@ class ProjectContext {
         }
 
         return { path: resolved };
+    }
+
+    /**
+     * @returns {string|null} the real target path if `resolved` (following symlinks) lands
+     * outside the real project root, else null. Probes the deepest existing ancestor so it
+     * works for not-yet-created files (we follow links on the directory that will hold them).
+     */
+    _resolvesOutsideRealRoot(resolved) {
+        if (!this.projectRoot) return null;
+        try {
+            const realRoot = fs.realpathSync(this.projectRoot);
+            let probe = resolved;
+            // walk up to the deepest path component that actually exists on disk
+            while (!fs.existsSync(probe)) {
+                const parent = path.dirname(probe);
+                if (parent === probe) return null; // reached filesystem root without finding one
+                probe = parent;
+            }
+            const realProbe = fs.realpathSync(probe);
+            if (realProbe === realRoot) return null;
+            const relReal = path.relative(realRoot, realProbe);
+            const escapes = relReal === '..' || relReal.startsWith('..' + path.sep) || path.isAbsolute(relReal);
+            return escapes ? realProbe : null;
+        } catch (e) {
+            return null; // realpath failure: fall back to the lexical decision already made
+        }
     }
 
     isWindows() {

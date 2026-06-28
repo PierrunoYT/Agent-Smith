@@ -76,7 +76,10 @@ async function evaluateCompletionBlock(ctx, session, planArtifacts, execDeps) {
         projectMeta: session.projectMeta,
         agentRanOkAfterEdit: session.agentRanOkAfterEdit,
         // Real-browser runtime verification of built web apps (Electron in-app, injected in tests).
-        runtimeVerify: execDeps && execDeps.runtimeVerify
+        runtimeVerify: execDeps && execDeps.runtimeVerify,
+        // Route the gate's deterministic web-wiring repair through the change ledger (Revert All).
+        changeLedger: execDeps && execDeps.changeLedger,
+        sessionId: session.id
     };
 
     const beforePayload = {

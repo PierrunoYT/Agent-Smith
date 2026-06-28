@@ -246,7 +246,7 @@ async function runValidation(projectRoot, filesTouched, goal, opts = {}) {
         // app doesn't run on local models): classic <script> + import/export, OR type="module"
         // + code that relies on window.* globals that module scope never sets. Make it actually
         // runnable before the reference/smoke checks evaluate it. Real ES-module apps untouched.
-        try { normalizeWebProject(projectRoot, htmlRel); } catch (e) { /* non-fatal */ }
+        try { await normalizeWebProject(projectRoot, htmlRel, { changeLedger: opts.changeLedger, sessionId: opts.sessionId }); } catch (e) { /* non-fatal */ }
         const htmlAbs = path.join(projectRoot, htmlRel);
         const htmlDir = path.dirname(htmlAbs);
         combinedHtml = readSafe(htmlAbs) || '';

@@ -41,14 +41,14 @@ test('htmlIsClassic detects classic vs module loading', () => {
     assert.equal(htmlIsClassic('<p>no scripts</p>'), false);
 });
 
-test('normalizeClassicScriptModules repairs a real workspace (classic html + export in js)', () => {
+test('normalizeClassicScriptModules repairs a real workspace (classic html + export in js)', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wmn-'));
     fs.writeFileSync(path.join(root, 'index.html'),
         '<!doctype html><html><body><script src="state.js"></script><script src="app.js"></script></body></html>');
     fs.writeFileSync(path.join(root, 'state.js'), "export const State = { cards: [] };\n");
     fs.writeFileSync(path.join(root, 'app.js'), "import { State } from './state.js';\nconsole.log(State);\n");
 
-    const fixed = normalizeClassicScriptModules(root, 'index.html');
+    const fixed = await normalizeClassicScriptModules(root, 'index.html');
     assert.deepEqual(fixed.sort(), ['app.js', 'state.js']);
     // both files now parse as classic scripts
     assert.doesNotThrow(() => new vm.Script(fs.readFileSync(path.join(root, 'state.js'), 'utf8')));
@@ -56,14 +56,14 @@ test('normalizeClassicScriptModules repairs a real workspace (classic html + exp
     fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('does NOT touch a proper ES-module app (type=module)', () => {
+test('does NOT touch a proper ES-module app (type=module)', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wmn-mod-'));
     fs.writeFileSync(path.join(root, 'index.html'),
         '<!doctype html><html><body><script type="module" src="app.js"></script></body></html>');
     const appSrc = "import { State } from './state.js';\nexport const x = 1;\n";
     fs.writeFileSync(path.join(root, 'app.js'), appSrc);
     fs.writeFileSync(path.join(root, 'state.js'), 'export const State = {};\n');
-    const fixed = normalizeClassicScriptModules(root, 'index.html');
+    const fixed = await normalizeClassicScriptModules(root, 'index.html');
     assert.deepEqual(fixed, []);
     assert.equal(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), appSrc); // untouched
     fs.rmSync(root, { recursive: true, force: true });
