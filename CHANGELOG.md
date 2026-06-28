@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.16.2] - 2026-06-28 — Code Mode: proactive asset-completion recovery
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **Keep the model on the asset-completion path instead of drifting back to rewriting the HTML.** After creating an HTML entry point, the harness already scans it for linked `<script src>` / `<link rel="stylesheet">` assets and arms a repair nudge. But once the model created ONE missing asset (e.g. `style.css`), the nudge didn't re-fire for the remaining one (`script.js`), so the model drifted into rewriting `index.html` and only then hit the block. Now creating any asset while others are still missing **re-arms the high-priority repair nudge** for the next turn, so the model is told to create the remaining file(s) — with their complete paths — before the rewrite even gets attempted. The block (and structured CREATE/FIX repair plan from 46.16.1) remains as the backstop; legitimate HTML edits once all assets exist are unaffected. This is per-run workspace state, not memory. Test: `assetRecoveryPolicy.test.js`.
+
+
 ## [46.16.1] - 2026-06-28 — Code Mode: structured blocked-write recovery
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

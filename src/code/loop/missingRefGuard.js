@@ -211,7 +211,14 @@ function clearPendingIfCreated(session, relPath) {
     if (!session?.pendingMissingRefs?.length || !relPath) return;
     const written = normRel(relPath);
     session.pendingMissingRefs = session.pendingMissingRefs.filter(p => normRel(p) !== written);
-    if (!session.pendingMissingRefs.length) delete session.pendingMissingRefs;
+    if (!session.pendingMissingRefs.length) {
+        delete session.pendingMissingRefs;
+    } else {
+        // Assets are STILL missing after this write. Re-arm the high-priority repair nudge so
+        // the next turn is told to create the remaining file(s) — otherwise the model drifts
+        // back to rewriting the HTML (and only then hits the block). Keeps recovery proactive.
+        session._injectMissingRefsNudge = true;
+    }
 }
 
 module.exports = {
