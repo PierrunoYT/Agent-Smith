@@ -708,19 +708,23 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **HIGH — plugin installation can fetch unpinned, mutable code and execute it after a shallow clone.** `install(url)` accepts arbitrary public git/http URLs, clones the default branch with `git clone --depth 1`, validates only `plugin.json`, and then installs bytes that `pluginManager.discover()` can later `require()` in the main process. GitHub web URLs without `git` fall back to `refs/heads/main`/`master` tarballs. There is no commit SHA pinning, signature check, checksum prompt, or immutable source requirement, so a compromised upstream branch or TOCTOU update between review and install becomes trusted app code. Fix: require immutable commit/tag refs plus a displayed content hash, store source commit/checksum, and refuse branch HEAD installs unless the user explicitly accepts mutable trusted code. Related code: `src/main/services/pluginInstaller.js:114-152`, `src/main/services/pluginManager.js:187-199`, `src/main/services/pluginManager.js:201-224`.
+- **LOW — failed plugin downloads leave partial archive files open in staging.** `_httpsDownload` creates a write stream before making the request, but on HTTP errors, redirects beyond the limit, validation failures, or request errors it rejects without closing/destroying the stream or unlinking the partial destination. The outer `finally` removes the staging directory, but an open file descriptor can make cleanup fail on Windows and leave temp data behind. Fix: destroy/close the stream on every failure path and unlink partial files before rejecting. Related code: `src/main/services/pluginInstaller.js:49-67`, `src/main/services/pluginInstaller.js:123-157`.
 
 ### `src/main/services/pluginIntegrity.js`
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — plugin integrity hashing ignores non-code assets that can affect runtime behavior.** `hashPluginDir` hashes only `.js`, `.cjs`, `.mjs`, and `.json` files, skipping everything else under the plugin directory. Trusted plugin code can read templates, prompts, binaries, WASM, certificates, or data files at runtime; changing those skipped files after trust-on-enable will not change the trusted hash and will not quarantine the plugin. Fix: hash every file except explicitly ignored bulky/generated directories, or require the manifest to enumerate all runtime assets and include them in the trust hash. Related code: `src/main/services/pluginIntegrity.js:16-29`, `src/main/services/pluginIntegrity.js:37-52`.
+- **LOW — unreadable plugin files hash as empty content instead of failing closed.** During hashing, `readFileSync` errors are caught and replaced with an empty string. A transient permissions/IO error can therefore produce a deterministic hash that gets trusted in `setEnabled`, and later restoring file readability changes the bytes again; conversely a malicious local actor can make a file unreadable during re-enable to trust the wrong content set. Fix: propagate read errors and refuse enable/discover trust decisions when any hash input cannot be read. Related code: `src/main/services/pluginIntegrity.js:44-49`, `src/main/services/pluginManager.js:451-456`.
 
 ### `src/main/services/pluginManager.js`
 
 **Bugs / notes:**
 
-- TBD
+- **HIGH — plugin command and hook execution bypasses the opt-in sandbox.** `invokeTool` can use `runToolSandboxed` when sandbox mode is enabled, but `runCommandText` and `fireHook` always build an in-process host and call plugin code directly. A plugin can put malicious code in a command or hook contribution and regain full main-process privileges even when the user/admin enabled `AGENT_SMITH_PLUGIN_SANDBOX=1`. Fix: route command and hook contributions through the same sandbox runner or disable commands/hooks when sandbox mode is required. Related code: `src/main/services/pluginManager.js:346-375`, `src/main/services/pluginManager.js:403-436`, `src/main/services/pluginSandbox.js:32-84`.
+- **MEDIUM — sandbox infrastructure failures silently fall back to trusted in-process execution.** In `invokeTool`, any sandbox error is logged and the tool is then executed in-process. That means a misconfigured Node permission model, unsupported Electron fork behavior, or malicious plugin that intentionally breaks sandbox startup turns a requested isolation policy into full main-process execution without surfacing failure to the user. Fix: fail closed when sandbox mode is enabled, or require an explicit per-plugin/admin opt-in to fallback. Related code: `src/main/services/pluginManager.js:350-365`, `src/main/services/pluginManager.js:368-375`.
+- **LOW — plugin state persistence failures are not converted to structured errors.** `setEnabled` and `uninstall` call `saveState()` directly; if the plugin state file cannot be written, the exception propagates through IPC/web as a generic 500 after in-memory enablement/deletion has already happened. The UI may show a failed request while the current process state changed and will revert on restart. Fix: write state atomically before mutating live registry where possible, catch persistence errors, and return structured failures without partial state changes. Related code: `src/main/services/pluginManager.js:78-81`, `src/main/services/pluginManager.js:441-477`, `src/main/services/pluginManager.js:480-491`.
 
 ### `src/main/services/pluginSandbox.js`
 
@@ -732,25 +736,25 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — sandbox runner trusts the parent-supplied tool file without an in-child containment check.** `runToolSandboxed` currently passes contribution files discovered by `pluginManager`, which are already scoped to the plugin directory, but the exported runner protocol itself sends only `toolFile` and the child blindly `require(msg.toolFile)`. If future sandboxed command/hook support or a custom caller passes a file outside the plugin directory while also granting project-root fs permissions, the child has no second containment check. Fix: send `pluginDir` to the child, re-check `toolFile` containment in `pluginSandboxRunner`, and reject mismatches before `require`. Related code: `src/main/services/pluginSandbox.js:32-42`, `src/main/services/pluginSandbox.js:79-80`, `src/main/services/pluginSandboxRunner.js:57-70`.
 
 ### `src/main/services/previewRunner.js`
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — pending desktop screenshot requests are not bound to the requesting preview.** `show({kind:'screenshot'})` stores a pending preview id for user source selection, but `captureSource` accepts any `sourceId` and will capture it even when `previewId` is missing or not found. A renderer/web caller with preview permission can skip the pick-source flow and request capture of any source id it has learned from `preview-list-sources`, bypassing the pending request/consent association. Fix: require a valid pending `previewId` for non-app desktop captures, verify it has not expired, and delete/deny stale or unknown ids. Related code: `src/main/services/previewRunner.js:121-130`, `src/main/services/previewRunner.js:137-164`, `src/main/ipc/preview.js:34-40`.
 
 ### `src/main/services/previewService.js`
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — preview capture viewport is not bounded before creating BrowserWindow.** `captureWebUrl` merges model/user-provided `viewport` directly into `BrowserWindow` dimensions. Extremely large, negative, or non-finite width/height values can throw, allocate excessive GPU/bitmap memory, or destabilize the Electron process during preview capture. Fix: coerce viewport dimensions to finite integers and clamp to a safe min/max before constructing `BrowserWindow`. Related code: `src/main/services/previewService.js:84-96`, `src/main/services/previewRunner.js:66-74`.
 
 ### `src/main/services/projectContext.js`
 
 **Bugs / notes:**
 
-- TBD
+- **HIGH — project-root containment is lexical and can be bypassed through symlinks/junctions.** `resolvePath` checks `path.relative(projectRoot, resolved)` without resolving symlinks. If the project contains a symlink/junction such as `out -> C:\Users\...` or `out -> /etc`, Code Mode and plugin fs operations can pass a relative path like `out/secret.txt`; the lexical check sees it under the project root while filesystem operations follow the link outside the root. This undermines Code Mode's documented project containment. Fix: use `fs.realpath` on the root and target (or nearest existing parent for new files) before allowing reads/writes, and reject paths whose real target escapes. Related code: `src/main/services/projectContext.js:155-193`, `src/main/services/pluginManager.js:316-320`, `src/main/services/previewService.js:23-27`.
 
 ### `src/main/services/projectDetector.js`
 
