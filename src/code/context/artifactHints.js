@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { collectBadRefsFromHtml, buildRepairPlanLines, htmlRelForRefs } = require('../governor/repairPlan.js');
 
 /** Task asks for a new deliverable (game, site, app) rather than editing the host project. */
 function goalImpliesNewArtifacts(goal) {
@@ -99,18 +100,24 @@ function buildMissingRefsNudge(missingRefs, goal, projectRoot) {
     if (!refs.length) return '';
     const dir = path.posix.dirname(refs[0]);
     const dirHint = dir && dir !== '.' ? `${dir}/` : '';
-    const preview = goalWantsPreview(goal) ? `\nAfter all files exist: show_preview path="${dirHint}index.html".` : '';
+    // Existing-but-broken linked files (e.g. a .css that contains HTML) need FIX, not CREATE.
+    const bad = projectRoot ? collectBadRefsFromHtml(projectRoot, htmlRelForRefs(refs)) : [];
+    const planLines = buildRepairPlanLines(refs, bad);
+    const preview = goalWantsPreview(goal) ? `\nAfter every file exists and the page loads with no errors: show_preview path="${dirHint}index.html".` : '';
     const gameHint = goalIsGame(goal)
-        ? ' For a game, include keyboard input, score updates, a game loop, and win/lose logic.'
+        ? '\nFor a game .js: include keyboard input, score updates, a game loop, and win/lose logic.'
         : '';
     return [
-        '[HARNESS — CREATE MISSING FILES]',
-        `The HTML links ${refs.length} file(s) that do not exist yet. Create them now with write_file — you MAY emit several write_file calls in THIS one turn to create them all at once.`,
-        `Missing: ${refs.join(', ')}`,
+        '[HARNESS — REPAIR, DO NOT RESTART]',
+        'index.html is already correct — do NOT rewrite any .html file. Build/fix the files it links so the page works. '
+            + 'You MAY emit several write_file/patch calls in THIS one turn:',
+        ...planLines,
         // The common failure is putting the file in a different folder or under a bare
         // name. The referenced files must be siblings of the HTML that links them.
-        `Each must be COMPLETE working code (no placeholders or stubs) written at EXACTLY its path${dirHint ? ` (same folder \`${dirHint}\` as the HTML that links it)` : ''} — not a bare filename and not in another directory.${gameHint}`,
-        'Do NOT rewrite any .html file. Respond with write_file tool calls only — no prose.',
+        `Write each at EXACTLY its path${dirHint ? ` (same folder \`${dirHint}\` as the HTML)` : ''} with COMPLETE working code — `
+            + 'no placeholders or stubs, never a bare filename or another directory, and never HTML inside a .js/.css file.'
+            + gameHint,
+        'Respond with tool calls only — no prose.',
         preview
     ].filter(Boolean).join('\n');
 }

@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const wv = require('../governor/webValidators.js');
+const { collectBadRefsFromHtml, buildRepairPlanLines } = require('../governor/repairPlan.js');
 
 function normRel(p) {
     return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
@@ -151,15 +152,24 @@ function checkMissingRefWrite(session, toolName, args) {
 
     const assetStillMissing = pendingNorm.some(isAssetPath);
 
-    // Block rewriting HTML while script/style siblings are missing.
+    // Block rewriting HTML while script/style siblings are missing — but hand back a STRUCTURED
+    // repair plan (create the missing files, fix any existing-but-broken ones) instead of forcing
+    // one exact path, and arm the next-turn "repair, do not restart" nudge so the model doesn't
+    // loop on index.html.
     if (assetStillMissing && isHtmlPath(target)) {
+        session._injectMissingRefsNudge = true;
+        const bad = collectBadRefsFromHtml(session.projectRoot, args.path);
+        if (bad.length) session.pendingBadRefs = bad;
+        const planLines = buildRepairPlanLines(pending, bad);
         return {
             error: [
-                `BLOCKED: Do not rewrite "${args.path}" — index.html is fine.`,
-                `Your NEXT tool call MUST be: write_file path="${next}"`,
-                'with COMPLETE file content (game logic for .js, styles for .css).',
-                'Do not send HTML in the content field until all linked files exist.'
-            ].join(' '),
+                `BLOCKED: "${args.path}" is already correct — rewriting it will not fix anything and only wastes this turn.`,
+                'REPAIR PLAN — do these, do NOT rewrite the HTML again:',
+                ...planLines,
+                'You MAY create/fix several files in THIS one turn (one file per call) at each EXACT path. '
+                    + 'Use write_file for new files and patch (or write_file) to repair existing ones. '
+                    + 'Put ONLY the correct content for each type — never HTML inside a .js or .css file.'
+            ].join('\n'),
             blockedReason: 'html_rewrite_while_refs_missing'
         };
     }

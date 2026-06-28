@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.16.1] - 2026-06-28 — Code Mode: structured blocked-write recovery
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Fixed
+- **A blocked index.html rewrite now hands back a clear repair plan instead of trapping the model.** The guard still blocks pointless rewrites of a working `index.html`, but the old message forced one exact path ("NEXT tool call MUST be write_file path=…") and game-flavored hints, so weak models looped on the HTML. The block (and the next-turn nudge) now return a structured plan: **CREATE** each missing linked file (`write_file`, complete JS/CSS, no HTML) and **FIX** each existing-but-broken one — e.g. a `.css` that contains HTML → "replace with CSS only (use patch or write_file)". Complete paths, multiple files allowed in one turn, `patch` offered for repairs, and a strong "REPAIR, DO NOT RESTART" instruction injected on the next turn. New shared module `governor/repairPlan.js`; test `blockedWriteRecovery.test.js`.
+
+
 ## [46.16.0] - 2026-06-27 — Code Mode: proactive mid-build runtime verification
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.
