@@ -766,7 +766,9 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **HIGH — worktree sync can write outside the main checkout via `../` touched paths.** `syncWorktreeFiles` accepts `relPaths`, normalizes backslashes, then does `path.join(worktreeRoot, normalized)` and `path.join(mainRoot, normalized)` without rejecting absolute paths or `..` segments. If a child session records a touched path such as `../victim.txt`, the sync step can copy from outside the worktree and overwrite outside the main project. Fix: resolve each source/destination, reject paths whose real/absolute source is outside `worktreeRoot` or destination is outside `mainRoot`, and only sync file paths previously accepted by `projectContext.resolvePath`. Related code: `src/main/services/worktreeManager.js:145-165`, `src/code/loop/milestoneSubagents.js:121-128`.
+- **MEDIUM — git worktree commands are built as shell strings with quoted paths.** `createRunWorktree`, `cleanupWorktree`, and milestone variants call `execSync` with interpolated branch/worktree paths. Session ids are sanitized, but the generated worktree path includes `projectRoot`; a repository path containing a double quote or shell metacharacter can break quoting and change the command. Fix: replace shell-string `execSync` calls with `execFileSync('git', [...], { cwd })` so paths/branches are argv values, not shell syntax. Related code: `src/main/services/worktreeManager.js:67-75`, `src/main/services/worktreeManager.js:82-94`, `src/main/services/worktreeManager.js:114-122`, `src/main/services/worktreeManager.js:129-141`.
+- **LOW — truncated worktree names can collide and silently reuse the wrong checkout.** `branchName`/`worktreePath` truncate sanitized session ids to 40 characters, and `milestoneKey` truncates parent/milestone ids. If two sessions share the same prefix, `createRunWorktree` returns `{ reused:true }` for an existing path without checking its branch/session ownership, so a later isolated run can reuse stale files from an unrelated earlier run. Fix: include a short hash of the full id in branch/path names and verify existing worktrees point at the expected branch before reuse. Related code: `src/main/services/worktreeManager.js:14-22`, `src/main/services/worktreeManager.js:24-35`, `src/main/services/worktreeManager.js:55-65`, `src/main/services/worktreeManager.js:102-112`.
 
 ## Batch 7 — Renderer
 
@@ -774,7 +776,12 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **HIGH — imported/history-restored chat content can execute HTML/JS in the renderer.** `addMessage('user', text)` assigns user content directly to `innerHTML`, assistant content is passed through `markedParse` without visible sanitization, and saved `modeSnapshots` are restored wholesale with `messagesContainer.innerHTML`. Imported sessions and persisted history therefore become a stored renderer-XSS vector; in web mode the script can read `localStorage.auth_token`, and in Electron it can invoke any exposed `window.api` channel allowed by the preload whitelist. Fix: render user text with `textContent`, sanitize markdown output with a strict allowlist sanitizer, and do not persist/restore raw HTML snapshots without sanitizing. Related code: `src/renderer/app.js:792-797`, `src/renderer/app.js:1202-1212`, `src/renderer/app.js:1530-1535`, `src/renderer/app.js:1765-1774`, `src/renderer/ui/historyPersistence.js:23-28`.
+- **MEDIUM — web auth tokens are stored in `localStorage` and exposed to any renderer XSS.** The web polyfill reads `localStorage.getItem('auth_token')` for `/api/invoke` and `/api/events`, and login stores the bearer token back into localStorage. Combined with the unsanitized chat/history rendering surfaces, any injected script can exfiltrate the token and call tool-capable endpoints until logout/restart. Fix: use HttpOnly/SameSite cookies or an in-memory token with refresh flow, and clear/reissue tokens on privilege changes. Related code: `src/renderer/app.js:46-55`, `src/renderer/app.js:72-86`, `src/renderer/app.js:1217-1235`, `src/renderer/app.js:1315-1320`.
+- **LOW — attachment names are injected as HTML when rendering attachment tags.** `renderAttachments` builds `tag.innerHTML` with `file.fileName` from the selected/imported file. Browser `File.name` and Electron `path.basename` are attacker-controlled strings; a name containing HTML can inject markup into the renderer before the message is sent. Fix: build the tag with text nodes and set `data-index` programmatically instead of interpolating filename into `innerHTML`. Related code: `src/renderer/app.js:1099-1112`.
+- **LOW — model ids from the LLM server are interpolated into `<option>` HTML.** `fetchModels` sets `modelSelect.innerHTML = models.map(m => `<option value="${m.id || m}">${m.id || m}</option>`).join('')`. A malicious or compromised configured LLM endpoint can return a model id containing HTML and inject markup into the renderer. Fix: create `option` elements with `value`/`textContent` instead of string HTML. Related code: `src/renderer/app.js:1547-1570`.
+- **MEDIUM — download links put bearer tokens in URLs.** The click handler for `/download_remote` appends `auth_token` as a query parameter and, in Electron, opens the full URL in the external browser. That exposes the token through browser history, proxy/server logs, crash reports, and `Referer` headers from the external browser. Fix: use an authenticated `fetch`/blob download with the `Authorization` header, or mint short-lived one-use download tokens scoped only to the target file. Related code: `src/renderer/app.js:2868-2890`, `main.js:760-764`, `main.js:931-949`.
+- **LOW — admin user list renders usernames through raw HTML attributes/body.** Usernames come from registration and are later interpolated into `row.innerHTML` in the admin panel (`<strong>...`, `data-user="..."`) without escaping. A username containing markup/quotes can become stored renderer XSS for admins who open the user list. Fix: validate usernames on registration and build admin rows with text nodes/dataset assignment. Related code: `src/renderer/app.js:1398-1451`, `src/main/services/auth.js:51-70`.
 
 ### `src/renderer/effects/bgEffect.js`
 
@@ -792,19 +799,19 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **MEDIUM — raw-text tool-call recovery can execute destructive tools that were only mentioned in prose.** `extractTextToolCalls` scans all assistant text for JSON/XML snippets naming any active Agent tool, including `write_file`, `delete_file`, `run_shell_command`, and `send_whatsapp_message`. `app.js` executes recovered calls whenever the native `tool_calls` array is empty. If a model quotes an example, repeats user-supplied JSON, or summarizes a malicious page containing `{"name":"delete_file",...}`, the fallback can promote that text into a real tool call. Fix: restrict fallback recovery to an explicit fenced/tool-call channel or require a model/system marker, and never recover mutating tools from arbitrary prose. Related code: `src/renderer/modes/agentTools.js:208-328`, `src/renderer/app.js:2567-2587`, `tests/agentTools.test.js:61-70`.
 
 ### `src/renderer/modes/chatLoop.js`
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — Agent tool batches can hang forever on plugin hooks or tools.** `executeAgentToolBatch` awaits `plugin-fire-hook` before/after each tool and then awaits the tool execution with no timeout or abort signal. A buggy plugin hook, hung IPC handler, or long-running foreground tool can leave the renderer in a busy state with no per-tool failure event. Fix: wrap plugin hooks and tool calls in bounded timeouts, emit a structured timeout result, and continue/abort according to tool criticality. Related code: `src/renderer/modes/chatLoop.js:7-14`, `src/renderer/modes/chatLoop.js:20-64`.
 
 ### `src/renderer/modes/code.js`
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — Code Mode renderer lock can remain stuck if `code-run` invoke throws.** `run()` sets `codeRunState.isBusy=true`, creates an abort controller, and locks Code Mode before awaiting `window.api.invoke('code-run', ...)`, but the cleanup that clears `isBusy`, `abortController`, and the code lock runs only after the await returns. If IPC throws/rejects before returning a result, the busy state can stay set and the UI remains locked until reload. Fix: wrap the body of `run()` in `try/finally` and perform the existing cleanup in the `finally` path. Related code: `src/renderer/modes/code.js:351-408`.
 
 ### `src/renderer/modes/modeHistory.js`
 
