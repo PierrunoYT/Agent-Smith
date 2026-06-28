@@ -572,7 +572,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — patch/batch edit IPC handlers crash when `planStore` is absent.** `main.js` does not inject `planStore` into `registerAllIpc`, and `edit-apply` correctly treats it as optional, but `edit-apply-patch` calls `planStore.load(pid)` unconditionally on success and `edit-apply-batch` calls `planStore.load(pid)` inside a try that still dereferences `undefined`. Invoking those whitelisted channels with a valid plan id can therefore throw instead of returning a structured result. Fix: guard these handlers the same way as `edit-apply` (`if (planStore) { ... }`) or inject a real plan store. Related code: `src/main/ipc/edit.js:37-68`, `main.js:697-719`, `tests/ipcHandlers.test.js:51-70`.
 
 ### `src/main/ipc/git.js`
 
