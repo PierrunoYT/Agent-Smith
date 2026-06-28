@@ -1202,7 +1202,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — example beforeToolCall hook reads the wrong payload field.** The example logs `payload.toolName`, but both the renderer Agent loop and Code Mode executor fire `beforeToolCall` with `{ tool: name, name, args }`. The example therefore logs `about to run tool: undefined`, which makes the documented hook template misleading for plugin authors. Fix: use `payload.tool || payload.name` (or update hook payloads/docs to consistently include `toolName`). Related code: `src/examples/plugins/hello/hooks/audit.js:6-9`, `src/renderer/modes/chatLoop.js:25-28`, `src/code/tools/executor.js:111-114`.
 
 ### `src/examples/plugins/hello/plugin.json`
 
@@ -1220,7 +1220,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — GhostTrace run ids are used in paths and shell commands without validation.** `PipelineTrace` accepts caller-supplied `run_id` strings, `generateReport`/`exportBundle` interpolate them into output paths, and `exportBundle` builds a shell command containing both `zipPath` and `run_id`. A crafted trace/run id containing path separators, quotes, or shell metacharacters can make diagnostic export write outside the intended GhostTrace folders or execute unintended shell syntax when the bundle is exported. Fix: restrict run ids to a safe slug (`[A-Za-z0-9_-]+`) at construction/export time, use `path.basename`/containment checks for bundle paths, and replace the shell-string `execSync` zip call with `execFileSync('python3', ['-m', 'zipfile', '-c', zipPath, runId], { cwd: RUN_BUNDLES_DIR })`. Related code: `src/ghosttrace/index.js:47-51`, `src/ghosttrace/index.js:173-205`, `src/ghosttrace/index.js:208-241`, `scripts/ghosttrace-cli.js:9-14`.
 
 ## Batch 11 — Tests, part 1
 
