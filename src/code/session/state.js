@@ -63,6 +63,10 @@ class CodeSession {
             runId: session.runId,
             codePlan: session.codePlan || null,
             workflow: session.workflow || null,
+            // isolation fields — so a resumed isolated run can still find and clean up its worktree
+            isolatedRun: session.isolatedRun || false,
+            worktreePath: session.worktreePath || null,
+            parentProjectRoot: session.parentProjectRoot || null,
             updatedAt: Date.now()
         };
     }

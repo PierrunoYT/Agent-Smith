@@ -12,7 +12,9 @@ class EarlyStopDetector {
         // writing ANY file (e.g. read-only exploration that never commits to a change),
         // stop early instead of burning the whole turn budget.
         this.maxNoWriteTurns = opts.maxNoWriteTurns || Number(process.env.XK_CODE_MAX_NOWRITE_TURNS) || 12;
-        this.turn = 0;
+        // On resume, seed from the persisted turn so the max-turns budget is durable across
+        // resumes (otherwise each resume grants a fresh budget -> unbounded total work).
+        this.turn = opts.initialTurn || 0;
         this.consecutiveErrors = 0;
         this.duplicateCount = 0;
         this.noWriteTurns = 0;

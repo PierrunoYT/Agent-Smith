@@ -1,5 +1,17 @@
 # Agent Smith Changelog
 
+## [46.22.0] - 2026-06-28 — Code Mode robustness (context budget, resume durability, background cleanup)
+
+Code Mode only. Robustness fixes from the aggressive audit.
+
+### Fixed
+- **Context budget overflow** (`budget.js`): `fitBudget` previously could not evict ANY system message, so accumulated `[HARNESS …]` recovery nudges piled up and pushed the prompt past numCtx — the backend then silently truncated the real prompt. It now protects only the leading system block (base prompt + compaction breadcrumb), the original goal, and the latest message, and evicts everything between oldest-first (including stale nudges), then re-checks after inserting the breadcrumb so that itself can't tip the budget. Token estimate tightened to ~3.5 chars/token to leave headroom for the (uncounted) tool-schema array.
+- **Resume durability** (`runCodeTask`, `earlyStop`, `state.js`): resuming a session previously (a) reset the max-turns / no-write budget to zero each time (a run could resume forever), (b) kept a stale `numCtx` that could exceed the currently-loaded window, and (c) lost the isolation fields so a resumed isolated run leaked its git worktree. Now the turn counter seeds from the persisted turn, `numCtx` is re-resolved against the live loaded window on resume, and `isolatedRun`/`worktreePath`/`parentProjectRoot` are persisted so cleanup works.
+- **Background-process leak** (`ipc/code.js`): `run_command` background jobs were never killed. Stopping a run now SIGTERMs every background job it spawned so they don't outlive (or persist past) the run.
+
+Verified: +tests/codeRobustness.test.js (3); existing budget tests updated to the new protect-goal behavior. Suite 567/567, harness-eval 10/10, harness-security 6/6.
+
+
 ## [46.21.0] - 2026-06-28 — Code Mode security hardening (autonomous run_command + path containment)
 
 Code Mode only. From the aggressive audit: after plan approval Code Mode runs tools autonomously, and the containment had holes. Closed the three most serious.

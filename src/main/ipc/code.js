@@ -109,7 +109,7 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
             runBackgroundCommand: (command, cwd) => {
                 const jobId = nextJobId++;
                 const child = spawnShell(command, cwd);
-                const procInfo = { log: [], running: true };
+                const procInfo = { log: [], running: true, child };
                 bgProcesses.set(jobId, procInfo);
                 const append = (data) => {
                     procInfo.log.push(...data.toString().split('\n').filter(Boolean));
@@ -330,6 +330,14 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
         }
         activeRun.controller?.abort();
         activeRun.status = 'aborted';
+        // Kill any background commands the run spawned so they don't outlive the run (leak /
+        // persistence). A naturally-completed run keeps them (e.g. a preview dev server).
+        for (const info of bgProcesses.values()) {
+            if (info.running && info.child) {
+                try { info.child.kill('SIGTERM'); } catch (e) { /* already gone */ }
+                info.running = false;
+            }
+        }
         emit({ type: 'error', message: 'Run stopped by user' });
         return { success: true };
     });

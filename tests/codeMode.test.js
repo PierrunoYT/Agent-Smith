@@ -38,14 +38,16 @@ test('extractToolCallsFromText ignores unknown tools', () => {
 test('fitBudget drops old messages under tight budget', () => {
     const msgs = [
         { role: 'system', content: 'sys' },
-        { role: 'user', content: 'a'.repeat(4000) },
-        { role: 'assistant', content: 'b'.repeat(4000) },
+        { role: 'user', content: 'the goal' },              // small task — must survive
+        { role: 'assistant', content: 'b'.repeat(4000) },   // old + large — evicted
+        { role: 'user', content: 'c'.repeat(4000) },        // old + large — evicted
         { role: 'user', content: 'latest' }
     ];
     const out = fitBudget(msgs, 500);
-    // the oldest oversized message is evicted, the latest goal is kept,
+    // the oldest oversized messages are evicted, the goal + latest are kept,
     // and a compaction breadcrumb replaces the dropped context (not silent loss).
-    assert.ok(!out.some(m => m.role === 'user' && m.content === 'a'.repeat(4000)), 'old large message dropped');
+    assert.ok(!out.some(m => m.content === 'b'.repeat(4000)), 'old large message dropped');
+    assert.ok(out.some(m => m.content === 'the goal'), 'original goal kept');
     assert.ok(out.some(m => m.content === 'latest'), 'latest kept');
     assert.ok(out.some(m => typeof m.content === 'string' && m.content.includes('CONTEXT COMPACTED')), 'compaction breadcrumb present');
 });

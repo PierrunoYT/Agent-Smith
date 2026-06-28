@@ -185,11 +185,20 @@ async function runCodeTask(opts) {
 
     if (opts.resumeSession) {
         session = opts.resumeSession;
+        // Re-resolve the context window on resume: the persisted numCtx may be stale (the model
+        // could be loaded at a different size now), and requesting more than is loaded would make
+        // the harness over-pack and the backend silently truncate the prompt.
+        try {
+            const { resolveCodeNumCtx } = require('./contextWindow.js');
+            const ctxResolved = await resolveCodeNumCtx(session.numCtx, apiBaseUrl, session.model || model);
+            session.numCtx = ctxResolved.numCtx;
+        } catch (e) { /* keep persisted numCtx */ }
         planArtifacts = await PlanArtifacts.load(projectRoot, session.goal);
         if (session.planArtifactsState) planArtifacts.restore(session.planArtifactsState);
         planAnchor = new PlanAnchor(session.goal, planArtifacts);
         if (session.planAnchorState) planAnchor.restore(session.planAnchorState);
-        earlyStop = new EarlyStopDetector({ maxTurns: opts.maxTurns || 40 });
+        // Seed the turn counter from the persisted value so the max-turns budget is durable.
+        earlyStop = new EarlyStopDetector({ maxTurns: opts.maxTurns || 40, initialTurn: session.turn || 0 });
         qualityMonitor = new QualityMonitor();
         trace = new CodeRunTrace(session.runId || sessionId);
         trace.inputReceived('resume');
