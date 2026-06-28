@@ -52,7 +52,9 @@ async function evaluateCompletionBlock(ctx, session, planArtifacts, execDeps) {
         planArtifacts: planArtifacts || session.planArtifacts,
         grindMode: session.grindMode !== false,
         projectMeta: session.projectMeta,
-        agentRanOkAfterEdit: session.agentRanOkAfterEdit
+        agentRanOkAfterEdit: session.agentRanOkAfterEdit,
+        // Real-browser runtime verification of built web apps (Electron in-app, injected in tests).
+        runtimeVerify: execDeps && execDeps.runtimeVerify
     };
 
     const beforePayload = {

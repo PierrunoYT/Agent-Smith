@@ -306,6 +306,21 @@ async function runValidation(projectRoot, filesTouched, goal, opts = {}) {
             ranChecks++;
             if (!smoke.ok) for (const e of (smoke.errors || [])) messages.push(`[SMOKE] ${e}`);
         }
+
+        // Real-browser runtime check (injected engine: Electron BrowserWindow in-app, Puppeteer
+        // in the harness/tests). Serves the project over HTTP and loads it for real, surfacing
+        // uncaught exceptions, module errors ("does not provide an export named X"), undefined
+        // globals, and 404s as [RUNTIME] feedback — so the model fixes the actual failure
+        // instead of the gate falsely passing an app that doesn't run. Fail-open on infra error.
+        if (typeof opts.runtimeVerify === 'function') {
+            try {
+                const rt = await opts.runtimeVerify(projectRoot, htmlRel);
+                if (rt && !rt.skipped) {
+                    ranChecks++;
+                    if (!rt.ok) for (const e of (rt.errors || [])) messages.push(`[RUNTIME] ${e}`);
+                }
+            } catch (e) { /* non-fatal */ }
+        }
     }
 
     const planMsg = await runPlanTestVerify(projectRoot, opts.planArtifacts);

@@ -1,5 +1,15 @@
 # Agent Smith Changelog
 
+## [46.15.0] - 2026-06-27 — Code Mode: real-browser runtime verification
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Added
+- **The completion gate now verifies a built web app actually RUNS, in a real browser.** Static checks (references, syntax, VM smoke) can't catch the open-ended space of "loads but doesn't work" — `import { X }` where the module doesn't export X, `window.App` undefined, an exception on init, a 404. The gate now serves the project over HTTP and loads it for real (hidden Electron `BrowserWindow` in the app; Puppeteer injected in tests), capturing uncaught exceptions, module errors and failed requests. Each becomes a `[RUNTIME]` message: the run is blocked AND the exact error is fed back to the model to fix next turn — instead of the gate passing an app that doesn't run. Fail-open (never blocks on infrastructure failure); disable via `XK_CODE_NO_RUNTIME_VERIFY=1`.
+
+  Proven with a real browser: an app with a wrong import name is blocked with *"does not provide an export named 'KanbanState'"*; a wiring bug the normalizer repairs (`const App` used as `window.App`) loads cleanly and passes. Tests: `runtimeVerify.test.js`, `runtimeGate.test.js`.
+
+
 ## [46.14.1] - 2026-06-27 — Code Mode: converge multi-file wiring consistently
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

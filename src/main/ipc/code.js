@@ -89,6 +89,10 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
             browserVerify: deps.browserVerify
                 ? (args) => deps.browserVerify.run(args)
                 : null,
+            // Real-browser runtime verification of built web apps (completion gate uses this to
+            // surface uncaught exceptions / module errors instead of passing a non-running app).
+            runtimeVerify: (projectRoot, htmlRel) =>
+                require('../services/runtimeBrowserCheck.js').runtimeVerify(projectRoot, htmlRel),
             runForegroundCommand: (command, cwd) => new Promise((resolve) => {
                 const FG_TIMEOUT_MS = 300000;
                 const cfg = projectContext.getShellConfig();
