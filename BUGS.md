@@ -424,7 +424,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **LOW — `query_run_trace` returns empty/undefined failure metadata because it reads the wrong step fields.** `PipelineTrace.addStep()` stores `outcome`, `duration_ms`, and `related_resource`, but `CodeRunTrace.query()` filters/counts on `s.status` and maps `s.tool`/`s.ms`. The exposed `query_run_trace` tool therefore reports `summary.failures: 0` for failed trace steps and returns steps without status/tool/timing, making verify-phase diagnostics misleading. Fix: map `outcome -> status`, `related_resource -> tool`, `duration_ms -> ms`, and count failures from `outcome === 'error'` (or similar). Related code: `src/ghosttrace/index.js:72-91`, `src/code/loop/codeTrace.js:75-104`, `src/code/tools/executor.js:151-159`, `tests/codeToolRegistry.test.js:22-37`.
 
 ### `src/code/loop/finalSummary.js`
 
