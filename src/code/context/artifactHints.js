@@ -11,7 +11,7 @@ const { collectBadRefsFromHtml, buildRepairPlanLines, htmlRelForRefs } = require
 function goalImpliesNewArtifacts(goal) {
     const t = String(goal || '').toLowerCase();
     if (!/\b(create|build|scaffold|make|write|develop)\b/.test(t)) return false;
-    return /\b(game|app|website|web[\s-]?based|web[\s-]?app|pac-?man|site|page|demo|preview)\b/.test(t);
+    return /\b(game|app|website|web[\s-]?based|web[\s-]?app|pac-?man|site|page|demo|preview|tracker|todo|dashboard|kanban|calculator|planner|budget)\b/.test(t);
 }
 
 function suggestArtifactSubdir(goal) {

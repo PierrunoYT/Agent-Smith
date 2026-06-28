@@ -398,6 +398,16 @@ function setCodeLock(locked) {
     }
 }
 
+/** Show STOP + lock toggles for any active Code run (SEND, plan approve, resume, planning). */
+function setCodeRunActive(active) {
+    const on = !!active;
+    codeRunState.isBusy = on;
+    if (stopBtn) stopBtn.style.display = on ? 'block' : 'none';
+    const planStopBtn = document.getElementById('plan-stop-btn');
+    if (planStopBtn) planStopBtn.style.display = on ? 'inline-block' : 'none';
+    setCodeLock(on);
+}
+
 async function showCodeReview(sessionId) {
     if (!sessionId || !window.XKCodeRunUI) return;
     const res = await window.api.invoke('code-ledger-diff', sessionId);
@@ -594,6 +604,7 @@ if (window.XKCodeMode) {
         getMilestoneWorktrees,
         getMilestoneConcurrent,
         setCodeLock,
+        setCodeRunActive,
         getProjectRoot: async () => {
             const r = await window.api.invoke('project-get-root');
             return r?.projectRoot || r?.root || null;
@@ -604,6 +615,7 @@ if (window.XKCodeMode) {
         onReview: (sid) => showCodeReview(sid),
         onTimelineChanged: scheduleCodeTimelinePersist
     });
+    document.getElementById('plan-stop-btn')?.addEventListener('click', () => stopBtn?.click());
 }
 
 if (window.XKActivityTimeline && messagesContainer && !window.XKSharedTimeline) {
@@ -1780,7 +1792,10 @@ function addMessage(role, text) {
 function updateEmptyState() {
     const empty = document.getElementById('empty-state');
     if (!empty) return;
-    const hasContent = messagesContainer.querySelector('.message, .agent-log, .activity-turn, .activity-thinking, .search-results-log');
+    const hasContent = messagesContainer.querySelector(
+        '.message, .agent-log, .activity-turn, .activity-thinking, .search-results-log, '
+        + '.code-resume-banner, .activity-advisory, .activity-retry'
+    ) || document.body.classList.contains('code-run-visible');
     empty.style.display = hasContent ? 'none' : 'flex';
 }
 
@@ -2018,8 +2033,7 @@ stopBtn.addEventListener('click', async () => {
     if (codeRunState.isBusy && codeModeHandler) {
         await codeModeHandler.stop();
         addMessage('system', 'Code run stopped.');
-        setCodeLock(false);
-        stopBtn.style.display = 'none';
+        setCodeRunActive(false);
         return;
     }
     if (abortController) {
@@ -2153,15 +2167,12 @@ My Query: ${text}`;
         persist();
 
         if (codeModeEnabled && codeModeHandler) {
-            setCodeLock(true);
-            codeRunState.isBusy = true;
-            stopBtn.style.display = 'block';
+            setCodeRunActive(true);
             let rootCheck = null;
             try { rootCheck = await window.api.invoke('project-get-root'); } catch (e) {}
             if (!rootCheck?.projectRoot) {
                 botDiv.innerHTML = window.markedParse('⚠️ **No workspace selected.** Click **📍 Here I am** first.');
-                setCodeLock(false);
-                codeRunState.isBusy = false;
+                setCodeRunActive(false);
                 trace.close();
                 return;
             }
@@ -2171,8 +2182,7 @@ My Query: ${text}`;
             const codeSummary = (botDiv.textContent || '').trim();
             convo.push({ role: 'assistant', content: codeSummary || '(code run complete)' });
             persist();
-            setCodeLock(false);
-            codeRunState.isBusy = false;
+            setCodeRunActive(false);
             trace.close();
             return;
         }
@@ -2836,6 +2846,8 @@ My Query: ${text}`;
 
         sendBtn.style.display = 'block';
         if (!codeRunState.isBusy) stopBtn.style.display = 'none';
+        const planStopBtn = document.getElementById('plan-stop-btn');
+        if (planStopBtn && !codeRunState.isBusy) planStopBtn.style.display = 'none';
         abortController = null;
         setCodeLock(codeRunState.isBusy);
         updateCodeModeUI();

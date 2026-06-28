@@ -11,7 +11,8 @@ const { SUBMIT_CODE_PLAN } = require('../tools/planTools.js');
 const { createPlan, defaultPlan } = require('../plan/codePlan.js');
 const gemmaHarness = require('../context/gemmaHarness.js');
 
-const PLANNING_SYSTEM = `You are Agent Smith in PLANNING mode. Explore the project with read-only tools, then call submit_code_plan with 3–12 ordered steps.
+const PLANNING_SYSTEM = `You are Agent Smith in PLANNING mode. Explore the project with read-only tools, then call submit_code_plan with 4–6 ordered steps (not 10+ micro-steps).
+For a new web app use milestones like: index.html structure, style.css, script.js logic, README + verify.
 Do NOT write or patch files. Do NOT declare the task done. Your only exit is submit_code_plan.`;
 
 const MAX_PLAN_TURNS = 8;

@@ -17,6 +17,8 @@ const { runSmokeTest } = require('./smokeTest.js');
 const { runFunctionalSmoke } = require('./functionalSmoke.js');
 const { runProjectRulesForProject } = require('./projectRules.js');
 const { buildNewArtifactBlock, goalWantsPreview, goalImpliesNewArtifacts, detectAppRepo, goalIsGame } = require('../context/artifactHints.js');
+const { detectPartialDeliverableState } = require('../context/partialBuild.js');
+const { parseDomGateItems } = require('../context/htmlContract.js');
 const { normalizeWebProject } = require('./webModuleNormalize.js');
 const { pickNextMissing } = require('../loop/missingRefGuard.js');
 
@@ -485,24 +487,60 @@ function formatBeforeDoneMessage(messages) {
 function formatGateMessage(result, goal, projectRoot) {
     const msgs = result.messages || [];
     const missing = result.missingRefs || [];
+    const artifactMissing = msgs
+        .map(m => /^\[ARTIFACT\]\s+(\S+)/i.exec(m)?.[1])
+        .filter(Boolean);
+
+    const domMsgs = msgs.filter(m => /^\[DOM\]/i.test(m));
+    if (domMsgs.length) {
+        const repairs = parseDomGateItems(domMsgs);
+        const artifactOnly = msgs.filter(m => /^\[ARTIFACT\]/i.test(m));
+        const other = msgs.filter(m => !/^\[(DOM|ARTIFACT)\]/i.test(m));
+        const lines = [
+            '[COMPLETION BLOCKED] JavaScript uses element ids that do not exist in index.html.',
+            '',
+            'Fix script.js with patch — rename getElementById calls to match the HTML (HTML is canonical):',
+            ...repairs.slice(0, 10).map(({ wrong, right }) => right
+                ? `  '${wrong}' → '${right}'`
+                : `  remove/replace '${wrong}' (not in HTML)`),
+            '',
+            'Do NOT rewrite index.html. Do NOT re-explore — patch script.js now.',
+            'Form fields: use ids from HTML (transaction-type, transaction-amount, etc.) or add name attributes and read via FormData correctly.'
+        ];
+        if (artifactOnly.length) {
+            lines.push('', 'Also create missing prompt files:', ...artifactOnly.map(m => `  - ${m}`));
+        }
+        if (other.length) {
+            lines.push('', 'Also failing:', ...other.slice(0, 6).map(m => `  - ${m}`));
+        }
+        return lines.join('\n');
+    }
 
     // Missing referenced files are the #1 reason weak models stall (they keep rewriting
     // index.html). Lead with an explicit, single next action and forbid the rewrite.
-    if (missing.length) {
-        const other = msgs.filter(m => !/missing on disk/i.test(m));
-        const nextFile = pickNextMissing(missing);
+    if (missing.length || artifactMissing.length) {
+        const other = msgs.filter(m => !/missing on disk/i.test(m) && !/^\[ARTIFACT\]/i.test(m));
+        const partial = projectRoot ? detectPartialDeliverableState(projectRoot, goal, []) : null;
+        const nextFile = pickNextMissing(missing)
+            || artifactMissing.find(n => /\.(js|mjs|cjs)$/i.test(n))
+            || partial?.nextFile
+            || artifactMissing[0]
+            || null;
+        const header = missing.length
+            ? '[COMPLETION BLOCKED] Linked files from index.html are still missing on disk.'
+            : '[COMPLETION BLOCKED] Required deliverable files from the prompt are still missing on disk.';
         const lines = [
-            '[COMPLETION BLOCKED] Linked files from index.html are still missing on disk.',
+            header,
             '',
             nextFile
                 ? 'Your NEXT tool call MUST be exactly one write_file:'
                 : 'Your NEXT tool call(s) MUST create these missing files with write_file (one per call):',
             nextFile
-                ? `  write_file path="${nextFile}" — COMPLETE ${/\.css$/i.test(nextFile) ? 'CSS' : 'JavaScript'} (not HTML)`
+                ? `  write_file path="${nextFile}" — COMPLETE ${/\.css$/i.test(nextFile) ? 'CSS' : /\.(md|markdown)$/i.test(nextFile) ? 'README documentation' : 'JavaScript'} (not HTML)`
                 : null,
-            ...(nextFile ? [] : missing.map(r => `  - ${r}`)),
-            ...(nextFile && missing.length > 1
-                ? ['', `Also still needed (after ${nextFile}): ${missing.filter(r => r !== nextFile).join(', ')}`]
+            ...(nextFile ? [] : [...missing, ...artifactMissing].map(r => `  - ${r}`)),
+            ...(nextFile && (missing.length + artifactMissing.length) > 1
+                ? ['', `Also still needed (after ${nextFile}): ${[...missing, ...artifactMissing].filter(r => r !== nextFile).join(', ')}`]
                 : []),
             '',
             'Do NOT rewrite index.html again — it already exists and is fine.',
@@ -510,6 +548,9 @@ function formatGateMessage(result, goal, projectRoot) {
                 ? 'For a game: keyboard input, score updates, game loop (requestAnimationFrame/setInterval), win/lose state.'
                 : 'Each .js must contain COMPLETE working app behavior (event handlers, state, persistence) — no placeholders.'
         ].filter(Boolean);
+        if (artifactMissing.some(n => /readme/i.test(n))) {
+            lines.push('', 'README.md: include project title, how to open index.html, and a short feature list.');
+        }
         if (other.length) {
             lines.push('', 'Also still failing (fix after the files exist):', ...other.map(m => `  - ${m}`));
         }

@@ -144,6 +144,14 @@
         anchorEl = el || null;
     }
 
+    function hideEmptyState() {
+        const empty = document.getElementById('empty-state');
+        if (empty) empty.style.display = 'none';
+        if (typeof document !== 'undefined' && document.body) {
+            document.body.classList.add('code-run-visible');
+        }
+    }
+
     function ensureTurnHeader(turn) {
         // Only the active turn's bar animates; freeze the previous one so past turns
         // sit quietly instead of all pulsing forever.
@@ -412,6 +420,7 @@
         switch (ev.type) {
         case 'run_start':
             reset();
+            hideEmptyState();
             if (window.XKScrollFollow && window.XKScrollFollow.get()) {
                 window.XKScrollFollow.get().beginRun();
             }

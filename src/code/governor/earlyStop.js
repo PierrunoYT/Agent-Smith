@@ -29,12 +29,14 @@ class EarlyStopDetector {
 
     /**
      * Stagnation guard tied to actual deliverables. Call once per turn with the number
-     * of distinct files written so far (filesTouched). Resets when that grows; stops
-     * after maxNoWriteTurns turns with no new file.
+     * of distinct files written so far (filesTouched). Resets when that grows OR when
+     * opts.hadEdit is true (patch/append to an existing file still counts as progress).
      */
-    onProgress(fileCount) {
+    onProgress(fileCount, opts = {}) {
         if (fileCount > this.lastFileCount) {
             this.lastFileCount = fileCount;
+            this.noWriteTurns = 0;
+        } else if (opts.hadEdit) {
             this.noWriteTurns = 0;
         } else {
             this.noWriteTurns++;

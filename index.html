@@ -31,7 +31,7 @@
             <div class="as-brand">
                 <span id="resource-status-dot" class="status-dot" title="Resource Status: Healthy"></span>
                 <h1 class="as-wordmark" data-text="AGENT SMITH">AGENT SMITH</h1>
-                <span id="app-version" class="as-version">v46.17.0</span>
+                <span id="app-version" class="as-version">v46.18.0</span>
             </div>
             <div class="as-subline">
                 <span class="as-tag">SYSTEM&nbsp;AGENT&nbsp;·&nbsp;LOCAL</span>
@@ -201,7 +201,10 @@
         <div id="plan-drawer" class="plan-drawer" style="display:none;" aria-hidden="true">
             <div class="plan-drawer-bar">
                 <span class="plan-drawer-title">BUILD PLAN</span>
-                <button type="button" id="plan-exit-btn" class="plan-exit-btn">EXIT</button>
+                <div class="plan-drawer-actions">
+                    <button type="button" id="plan-stop-btn" class="plan-exit-btn plan-stop-btn" style="display:none;" title="Stop the current Code run">STOP</button>
+                    <button type="button" id="plan-exit-btn" class="plan-exit-btn" title="Collapse this panel">EXIT</button>
+                </div>
             </div>
             <div id="plan-panel-mount"></div>
         </div>

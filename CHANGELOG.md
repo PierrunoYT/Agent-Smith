@@ -1,5 +1,21 @@
 # Agent Smith Changelog
 
+## [46.18.0] - 2026-06-28 — Code Mode: DOM-contract repair guidance + partial-build recovery (audited)
+
+Code Mode only — Chat and Agent Mode behavior is unchanged.
+
+### Added
+- **DOM-contract repair guidance** (`htmlContract.js`): when JS references element ids/form controls that index.html does not define, the harness now hands the model a precise repair instruction (e.g. `getElementById('transactionForm') → ('transaction-form')`) so it fixes script.js itself via `patch` (a ledger-tracked, reversible edit). The HTML ids are treated as canonical — a rewrite of the correct index.html during repair is blocked. **Read-only by design: the harness never rewrites the model's source.**
+- **Partial-build recovery** (`partialBuild.js`): detects half-built web deliverables (HTML on disk, linked JS/CSS/README still missing) and nudges the model to finish the missing files; write-first now extends to partial builds.
+- **Plan-step auto-advance + gate visibility** (`planStepAutoAdvance.js`, `codePlanPanel.js`): plan steps tick "done" as deliverables land (models rarely call mark_code_step_done), and the plan panel surfaces remaining gate blockers. Planning now emits 4–6 milestone steps instead of 10+ micro-steps.
+- Smaller: `earlyStop` counts edits as progress; `extractor` salvages malformed write tool calls; clearer `[DOM]`/`[ARTIFACT]` completion-gate repair messages.
+
+### Audit / safety
+- This release incorporates an external batch of changes that were audited and cleaned before merge: the **auto-`fs.writeFile` code rewriting** (fuzzy id-rename, orphan-line pruning, and a top-level dedupe that deleted valid declarations in different scopes, all bypassing the change ledger) was **removed** — it could corrupt working code and its test mutated a committed fixture. Replaced with the read-only "tell the model exactly what to patch" path above. Also fixed an unguarded `document.body` deref in the timeline. A regression test asserts the harness never modifies the model's script and preserves valid duplicate-scoped declarations.
+
+Verified: suite 541/541, harness-eval 10/10, harness-security 6/6. Real runCodeTask E2E: write-first holds (0 pre-write exploration), the gate correctly blocks a broken app with precise DOM repair instructions WITHOUT touching the model's code, and a correct app passes the gate and runs (renders, totals update, persists) in a real browser.
+
+
 ## [46.17.0] - 2026-06-28 — Code Mode: functional verification, less exploration, no false stalls
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

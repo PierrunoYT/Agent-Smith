@@ -254,6 +254,7 @@ module.exports = {
     normRel,
     pickNextMissing,
     collectMissingRefsFromHtml,
+    findDeliverableIndexHtml,
     seedPendingMissingRefs,
     syncPendingAfterHtmlWrite,
     checkMissingRefRead,

@@ -12,6 +12,12 @@ const {
     clearPendingIfCreated,
     syncPendingAfterHtmlWrite
 } = require('./missingRefGuard.js');
+const {
+    captureHtmlIdContract,
+    checkDomRepairWrite,
+    clearDomRepairsIfScriptPatched
+} = require('../context/htmlContract.js');
+const { autoAdvancePlanSteps, planProgressPayload } = require('../plan/planStepAutoAdvance.js');
 
 function mergeSensorWarnings(toolResult, sensor) {
     if (!sensor || (!sensor.warnings?.length && !sensor.remediation?.length)) return;
@@ -110,6 +116,17 @@ function createDefaultMiddleware(ctx) {
                         }
                     };
                 }
+                const domWriteBlocked = checkDomRepairWrite(session, payload.name, payload.args);
+                if (domWriteBlocked) {
+                    return {
+                        veto: true,
+                        result: {
+                            error: domWriteBlocked.error,
+                            blockedReason: domWriteBlocked.blockedReason,
+                            phaseBlocked: false
+                        }
+                    };
+                }
                 return null;
             },
             async afterTool({ session, payload }) {
@@ -118,6 +135,48 @@ function createDefaultMiddleware(ctx) {
                 const relPath = toolResult?.relPath || args?.path;
                 clearPendingIfCreated(session, relPath);
                 syncPendingAfterHtmlWrite(session, relPath);
+                if (relPath && /\.html?$/i.test(String(relPath))) {
+                    captureHtmlIdContract(session, relPath);
+                    session._injectDomContractNudge = true;
+                }
+                if (relPath && /\.(js|mjs|cjs)$/i.test(String(relPath))) {
+                    // If we were in DOM-repair mode, re-check disk: clear the flag if the model's
+                    // patch fixed the mismatch (read-only — never rewrites the model's code).
+                    clearDomRepairsIfScriptPatched(session, relPath);
+                }
+                return null;
+            }
+        },
+        // planAutoAdvance — tick checklist when deliverables land (no mark_code_step_done needed)
+        {
+            name: 'planAutoAdvance',
+            async afterTool({ ctx, session, payload }) {
+                const { name, toolResult, ok, args } = payload;
+                if (!ok || !WRITE_TOOLS.has(name)) return null;
+                if (!session.codePlan?.steps?.length) return null;
+                const touched = [...(session.filesTouched || [])];
+                const rel = toolResult?.relPath || args?.path;
+                if (rel) {
+                    const norm = String(rel).replace(/\\/g, '/');
+                    if (!touched.includes(norm)) touched.push(norm);
+                }
+                const result = autoAdvancePlanSteps(
+                    session.codePlan,
+                    session.projectRoot,
+                    touched,
+                    session.goal
+                );
+                if (result.advanced > 0 && ctx.emit) {
+                    ctx.emit({
+                        type: 'plan_step_update',
+                        ...planProgressPayload(
+                            session.codePlan,
+                            session.projectRoot,
+                            session.goal,
+                            touched
+                        )
+                    });
+                }
                 return null;
             }
         },

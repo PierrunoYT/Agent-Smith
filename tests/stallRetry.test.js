@@ -48,6 +48,7 @@ test('a transient stall retries the turn instead of ending the run', async () =>
 
     assert.ok(calls >= 2, 'must retry the turn after a stall (not stop on the first stall)');
     assert.ok(events.some(e => e.type === 'stream_retry'), 'a stream_retry event is emitted');
+    assert.equal(session.turn, 1, 'stall retry must not consume an extra turn slot');
     assert.equal(session.status !== 'error' || !/stalled/i.test(session.error || ''), true,
         'the run must not end with the stall error after a successful retry');
 });

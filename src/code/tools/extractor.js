@@ -162,8 +162,34 @@ function extractSalvageTruncatedPendingWrite(text, targetPath) {
     return { path: normPath, content: raw };
 }
 
+function repairMalformedWriteCalls(message, salvagePath) {
+    if (!salvagePath || !Array.isArray(message?.tool_calls) || !message.tool_calls.length) return 0;
+    let fixed = 0;
+    for (const tc of message.tool_calls) {
+        const fn = tc.function;
+        if (!fn) continue;
+        const name = fn.name;
+        if (name !== 'write_file' && name !== 'patch') continue;
+        let args = fn.arguments;
+        if (typeof args === 'string') {
+            const r = tryParseJson(args);
+            args = r.ok ? r.value : {};
+        }
+        if (!args || typeof args !== 'object') args = {};
+        if (!args.path && args.content) {
+            fn.arguments = { ...args, path: salvagePath };
+            fixed++;
+        }
+    }
+    return fixed;
+}
+
 function extractFromMessage(message, toolSchemas, opts = {}) {
     if (!message) return { patched: false, addedCalls: 0 };
+    if (opts.salvagePath && Array.isArray(message.tool_calls) && message.tool_calls.length) {
+        const repaired = repairMalformedWriteCalls(message, opts.salvagePath);
+        if (repaired) return { patched: true, addedCalls: 0, repairedMalformed: repaired };
+    }
     if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
         return { patched: false, addedCalls: 0 };
     }
@@ -257,5 +283,6 @@ module.exports = {
     normalizeToolCall,
     scanJsonObjects,
     extractLenientWriteCalls,
-    extractSalvageTruncatedPendingWrite
+    extractSalvageTruncatedPendingWrite,
+    repairMalformedWriteCalls
 };

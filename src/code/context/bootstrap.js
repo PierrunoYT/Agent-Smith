@@ -8,6 +8,7 @@ const path = require('path');
 const { detectProjectCommands } = require('../../shared/verificationHarness.js');
 const { buildNewArtifactBlock } = require('./artifactHints.js');
 const { buildSymbolMap } = require('./symbolMap.js');
+const { detectPartialDeliverableState, buildPartialBuildNudge } = require('./partialBuild.js');
 
 function detectRuntime(root) {
     const meta = detectProjectCommands(root);
@@ -55,6 +56,10 @@ function buildBootstrapBlock(root, treeSummary, goal) {
     }
     const artifactBlock = buildNewArtifactBlock(goal, root);
     if (artifactBlock) lines.push(artifactBlock);
+    const partial = detectPartialDeliverableState(root, goal, []);
+    if (partial) {
+        lines.push('', buildPartialBuildNudge({ projectRoot: root, goal, filesTouched: [] }, goal, root));
+    }
     return lines.join('\n');
 }
 

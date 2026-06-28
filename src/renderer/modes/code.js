@@ -98,6 +98,54 @@
         hideVerifyPopup();
     }
 
+    function getTimeline() {
+        return timeline || window.XKSharedTimeline || null;
+    }
+
+    function hideEmptyStateOverlay() {
+        const empty = document.getElementById('empty-state');
+        if (empty) empty.style.display = 'none';
+        document.body.classList.add('code-run-visible');
+        depsRef?.updateEmptyState?.();
+    }
+
+    function clearCodeRunVisible() {
+        document.body.classList.remove('code-run-visible');
+        depsRef?.updateEmptyState?.();
+    }
+
+    /** Plan approve / resume / run_start may not have a sendMessage bot bubble — create one. */
+    function ensureCodeRunAnchor(initialHtml) {
+        const messagesEl = document.getElementById('messages');
+        if (!messagesEl || !depsRef) return null;
+
+        hideEmptyStateOverlay();
+
+        if (!depsRef.botDivRef || !depsRef.botDivRef.isConnected) {
+            const div = document.createElement('div');
+            div.className = 'message bot-message code-run-anchor';
+            div.innerHTML = initialHtml || '<span class="loading-pulse">Code Mode — running…</span>';
+            messagesEl.appendChild(div);
+            depsRef.botDivRef = div;
+        } else if (initialHtml) {
+            depsRef.botDivRef.innerHTML = initialHtml;
+        }
+
+        const tl = getTimeline();
+        if (tl?.setAnchor) tl.setAnchor(depsRef.botDivRef);
+        return depsRef.botDivRef;
+    }
+
+    function dispatchTimeline(ev, extra) {
+        const tl = getTimeline();
+        if (!tl?.handleCodeEvent) return;
+        tl.handleCodeEvent(ev, {
+            botDiv: depsRef?.botDivRef,
+            anchor: depsRef?.botDivRef,
+            ...(extra || {})
+        });
+    }
+
     async function showResumeBannerIfAny() {
         if (!depsRef?.getProjectRoot || !window.api) return;
         try {
@@ -139,14 +187,23 @@
                 const numCtx = depsRef.getNumCtx();
                 const apiBaseUrl = depsRef.getApiBase();
                 resumeBannerEl.innerHTML = '<span class="loading-pulse">Resuming…</span>';
+                ensureCodeRunAnchor('<span class="loading-pulse">Code Mode — resuming…</span>');
+                const tl = getTimeline();
+                tl?.reset?.();
                 await depsRef.flushContextSync?.();
-                await window.api.invoke('code-resume', {
-                    sessionId: s.id,
-                    model,
-                    numCtx,
-                    apiBaseUrl,
-                    projectRoot: root
-                });
+                depsRef.setCodeRunActive?.(true);
+                try {
+                    await window.api.invoke('code-resume', {
+                        sessionId: s.id,
+                        model,
+                        numCtx,
+                        apiBaseUrl,
+                        projectRoot: root
+                    });
+                } finally {
+                    depsRef.setCodeRunActive?.(false);
+                    clearCodeRunVisible();
+                }
                 resumeBannerEl?.remove();
                 resumeBannerEl = null;
             });
@@ -158,47 +215,52 @@
         const { addMessage, onStatusUpdate, onReview, getModel, getNumCtx, getApiBase } = depsRef;
         const planPanel = window.XKCodePlanPanel;
 
-        if (timeline) {
-            timeline.handleCodeEvent(ev, { botDiv: depsRef.botDivRef, anchor: depsRef.botDivRef });
+        if (ev.type === 'run_start' || ev.type === 'planning_start' || ev.type === 'plan_approved') {
+            ensureCodeRunAnchor();
         }
+
+        dispatchTimeline(ev);
 
         switch (ev.type) {
         case 'planning_start':
             window.XKSidebarLayout?.exitPreviewMode?.(); // clear any stale preview from a prior run
             planPanel?.renderPlanning({ goal: ev.goal });
+            depsRef.setCodeRunActive?.(true);
             addMessage('system', '**Code Mode:** Planning — read-only exploration before approval.');
             break;
         case 'plan_awaiting_approval':
+            depsRef.setCodeRunActive?.(false);
             activeSessionId = ev.sessionId || activeSessionId;
             planPanel?.renderApproval({
                 goal: ev.goal,
                 codePlan: ev.codePlan,
                 sessionId: ev.sessionId,
                 onApprove: async (sessionId, steps) => {
+                    ensureCodeRunAnchor('<span class="loading-pulse">Code Mode — executing plan…</span>');
+                    getTimeline()?.reset?.();
                     await depsRef.flushContextSync?.();
-                    if (depsRef.codeRunState) depsRef.codeRunState.isBusy = true;
-                    depsRef.setCodeLock?.(true);
-                    const res = await window.api.invoke('code-plan-approve', {
-                        sessionId,
-                        steps,
-                        model: getModel?.(),
-                        numCtx: getNumCtx?.(),
-                        apiBaseUrl: getApiBase?.()
-                    });
-                    if (res?.error) addMessage('system', `**Plan approval failed:** ${res.error}`);
-                    if (depsRef.codeRunState) depsRef.codeRunState.isBusy = false;
-                    depsRef.setCodeLock?.(false);
+                    depsRef.setCodeRunActive?.(true);
+                    try {
+                        const res = await window.api.invoke('code-plan-approve', {
+                            sessionId,
+                            steps,
+                            model: getModel?.(),
+                            numCtx: getNumCtx?.(),
+                            apiBaseUrl: getApiBase?.()
+                        });
+                        if (res?.error) addMessage('system', `**Plan approval failed:** ${res.error}`);
+                    } finally {
+                        depsRef.setCodeRunActive?.(false);
+                        clearCodeRunVisible();
+                    }
                 },
                 onReject: async (sessionId) => {
                     await window.api.invoke('code-plan-reject', { sessionId });
                     planPanel?.clear();
-                    if (depsRef.codeRunState) depsRef.codeRunState.isBusy = false;
-                    depsRef.setCodeLock?.(false);
+                    depsRef.setCodeRunActive?.(false);
                 }
             });
             addMessage('system', '**Plan ready** — review steps in the sidebar, then **Approve & Run**.');
-            if (depsRef.codeRunState) depsRef.codeRunState.isBusy = false;
-            depsRef.setCodeLock?.(false);
             break;
         case 'plan_approved':
             clearRunStatus();
@@ -210,20 +272,36 @@
             addMessage('system', '**Plan approved** — executing steps.');
             break;
         case 'plan_step_update':
-            planPanel?.updateProgress(ev.codePlan);
+            planPanel?.updateProgress(ev.codePlan, {
+                gateBlockerCount: ev.gateBlockerCount,
+                gateBlockers: ev.gateBlockers
+            });
             if (onStatusUpdate && ev.codePlan) {
                 const total = ev.codePlan.steps?.length || 0;
                 const done = ev.codePlan.steps?.filter(s => s.status === 'done').length || 0;
-                onStatusUpdate({ planProgress: `${Math.min(done + 1, total)}/${total}` });
+                const blockers = ev.gateBlockerCount ?? 0;
+                const activeIdx = ev.codePlan.steps?.findIndex(s => s.status === 'active') ?? -1;
+                const stepNum = activeIdx >= 0 ? activeIdx + 1 : Math.min(done + 1, total);
+                let prog;
+                if (done >= total) {
+                    prog = blockers > 0
+                        ? `${done}/${total} done · ${blockers} blocker(s)`
+                        : `${done}/${total} done`;
+                } else {
+                    prog = `${done}/${total} done · step ${stepNum}`;
+                }
+                onStatusUpdate({ planProgress: prog });
             }
             break;
         case 'plan_rejected':
             planPanel?.clear();
+            depsRef.setCodeRunActive?.(false);
             addMessage('system', '**Plan rejected.**');
             break;
         case 'run_start':
             window.XKSidebarLayout?.exitPreviewMode?.(); // a new run supersedes any prior preview drawer
             clearRunStatus();
+            depsRef.setCodeRunActive?.(true);
             activeSessionId = ev.sessionId;
             if (planPanel) {
                 const st = planPanel.getState();
@@ -274,6 +352,13 @@
                 ? next.replace(/^\[[A-Z]+\]\s*/, '').replace(/\s*\(it is missing on disk\)/i, '').trim().slice(0, 140)
                 : `resolving ${msgs.length} issue(s)`;
             setRunStatus(`Verifying — ${hint}`);
+            const st = planPanel?.getState?.();
+            if (st?.codePlan) {
+                planPanel.updateProgress(st.codePlan, {
+                    gateBlockerCount: msgs.length,
+                    gateBlockers: msgs.slice(0, 5)
+                });
+            }
             break;
         }
         case 'run_continue': {
@@ -301,6 +386,8 @@
             break;
         case 'done': {
             clearRunStatus();
+            clearCodeRunVisible();
+            depsRef.setCodeRunActive?.(false);
             const label = ev.status && ev.status !== 'done'
                 ? `Code run ${ev.status.toUpperCase()}`
                 : 'Code run complete';
@@ -312,6 +399,8 @@
         }
         case 'error':
             clearRunStatus();
+            clearCodeRunVisible();
+            depsRef.setCodeRunActive?.(false);
             addMessage('system', `**Code Mode:** ${ev.message || 'error'}`);
             if (/stopped|aborted|rejected/i.test(ev.message || '')) {
                 window.XKCodePlanPanel?.clear();
@@ -353,17 +442,19 @@
             async run(prompt, botDiv) {
                 const { codeRunState } = deps;
                 await deps.flushContextSync?.();
-                codeRunState.isBusy = true;
+                deps.setCodeRunActive?.(true);
                 codeRunState.abortController = new AbortController();
                 depsRef.botDivRef = botDiv;
+                hideEmptyStateOverlay();
 
                 if (window.XKScrollFollow && window.XKScrollFollow.get()) {
                     window.XKScrollFollow.get().beginRun();
                 }
 
-                if (timeline) {
-                    timeline.reset();
-                    timeline.setAnchor(botDiv);
+                const tl = getTimeline();
+                if (tl) {
+                    tl.reset();
+                    tl.setAnchor(botDiv);
                 }
 
                 const model = deps.getModel();
@@ -375,32 +466,39 @@
 
                 botDiv.innerHTML = `<span class="loading-pulse">Code Mode — starting…</span>`;
 
-                const res = await window.api.invoke('code-run', {
-                    prompt,
-                    model,
-                    numCtx,
-                    maxTurns,
-                    codeTemperature,
-                    projectRoot,
-                    apiBaseUrl,
-                    requirePlanApproval: deps.getRequirePlanApproval?.() === true,
-                    grindMode: deps.getGrindMode?.() !== false,
-                    isolatedRun: deps.getIsolatedRun?.() === true,
-                    parallelMilestones: deps.getParallelMilestones?.() === true,
-                    milestoneWorktrees: deps.getMilestoneWorktrees?.() === true,
-                    milestoneConcurrent: deps.getMilestoneConcurrent?.() === true
-                });
-
-                if (window.XKScrollFollow && window.XKScrollFollow.get()) {
-                    window.XKScrollFollow.get().endRun();
+                let res;
+                try {
+                    res = await window.api.invoke('code-run', {
+                        prompt,
+                        model,
+                        numCtx,
+                        maxTurns,
+                        codeTemperature,
+                        projectRoot,
+                        apiBaseUrl,
+                        requirePlanApproval: deps.getRequirePlanApproval?.() === true,
+                        grindMode: deps.getGrindMode?.() !== false,
+                        isolatedRun: deps.getIsolatedRun?.() === true,
+                        parallelMilestones: deps.getParallelMilestones?.() === true,
+                        milestoneWorktrees: deps.getMilestoneWorktrees?.() === true,
+                        milestoneConcurrent: deps.getMilestoneConcurrent?.() === true
+                    });
+                } finally {
+                    if (window.XKScrollFollow && window.XKScrollFollow.get()) {
+                        window.XKScrollFollow.get().endRun();
+                    }
+                    // Planning-only return (awaiting approval) — execution hasn't started yet.
+                    if (res?.awaitingApproval) {
+                        deps.setCodeRunActive?.(false);
+                    } else {
+                        clearCodeRunVisible();
+                    }
+                    codeRunState.abortController = null;
+                    await deps.flushContextSync?.();
                 }
 
-                codeRunState.isBusy = false;
-                codeRunState.abortController = null;
-                deps.setCodeLock?.(false);
-                await deps.flushContextSync?.();
-
                 if (res?.error && botDiv) {
+                    deps.setCodeRunActive?.(false);
                     botDiv.innerHTML = deps.markedParse(`**Code Mode error:** ${res.error}`);
                 }
                 if (res?.sessionId) {
@@ -412,7 +510,7 @@
 
             async stop() {
                 await window.api.invoke('code-stop');
-                if (deps.codeRunState) deps.codeRunState.isBusy = false;
+                deps.setCodeRunActive?.(false);
                 await deps.flushContextSync?.();
             },
 

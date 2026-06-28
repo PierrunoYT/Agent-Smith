@@ -30,11 +30,25 @@ function isExploreStep(title) {
     return /\bexplore\b/i.test(String(title || ''));
 }
 
+/** Collapse overly granular model plans (10+ feature steps) into trackable milestones. */
+function collapseGranularWebPlan(steps, goal) {
+    if (!goalImpliesNewArtifacts(goal) || goalIsGame(goal)) return steps;
+    if (!Array.isArray(steps) || steps.length <= 8) return steps;
+    return [
+        { title: 'Create index.html with app structure and UI elements', status: 'active' },
+        { title: 'Create style.css for layout and theme', status: 'pending' },
+        { title: 'Create script.js with core app logic', status: 'pending' },
+        { title: 'Implement localStorage, CRUD, filters, and interactions in script.js', status: 'pending' },
+        { title: 'Create README.md and verify linked assets load', status: 'pending' }
+    ].map(s => ({ id: stepId(), ...s }));
+}
+
 function createPlan(goal, steps) {
-    const normalized = normalizeSteps(steps);
+    let normalized = normalizeSteps(steps);
     if (!normalized.length) {
         return defaultPlan(goal);
     }
+    normalized = collapseGranularWebPlan(normalized, goal);
     // Plans that start with "Explore" stall greenfield builds — jump to implement.
     if (goalImpliesNewArtifacts(goal) && isExploreStep(normalized[0]?.title)) {
         normalized[0] = {
@@ -153,7 +167,7 @@ function toContextBlock(plan, goal) {
         const mark = s.status === 'done' ? 'x' : (i === plan.currentStepIndex ? '>' : ' ');
         lines.push(`  [${mark}] ${i + 1}. ${s.title}`);
     });
-    lines.push('', `FOCUS NOW (step ${prog.current}/${prog.total}): ${prog.label}`);
+    lines.push('', `FOCUS NOW (step ${prog.current}/${prog.total}, ${prog.done} done): ${prog.label}`);
     if (goalImpliesNewArtifacts(goal) && isExploreStep(prog.label)) {
         lines.push('This is a greenfield build — use write_file to create files now; do not spend turns only reading.');
     } else {
@@ -181,5 +195,6 @@ module.exports = {
     stepProgress,
     toContextBlock,
     advancePastExploreIfNeeded,
-    isExploreStep
+    isExploreStep,
+    collapseGranularWebPlan
 };

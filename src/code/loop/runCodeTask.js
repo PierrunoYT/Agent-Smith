@@ -18,6 +18,7 @@ const { runPlanningPhase } = require('./planningPhase.js');
 const { CodeRunTrace } = require('./codeTrace.js');
 const { markApproved, isExploreStep } = require('../plan/codePlan.js');
 const { goalImpliesNewArtifacts } = require('../context/artifactHints.js');
+const { detectPartialDeliverableState } = require('../context/partialBuild.js');
 const { createRunWorktree, cleanupWorktree } = require('../../main/services/worktreeManager.js');
 const {
     shouldUseSubagents,
@@ -270,6 +271,11 @@ async function runCodeTask(opts) {
         // so the model doesn't explore an empty folder. Distinct from `greenfield`, which is
         // also true for "new artifact in an existing repo".
         session.emptyWorkspace = isGreenfieldWorkspace(projectRoot, treeSummary);
+        const partialResume = detectPartialDeliverableState(projectRoot, prompt, []);
+        if (partialResume) {
+            session.phase = 'implement';
+            session._partialBuildNudgeInjected = true;
+        }
         session.projectMeta = detectProjectCommands(session.projectRoot || projectRoot);
         session.grindMode = opts.grindMode !== false;
 

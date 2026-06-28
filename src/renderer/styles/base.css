@@ -1315,6 +1315,9 @@ body.xk-preview-active #preview-drawer {
     display: flex; align-items: center; justify-content: space-between;
     flex-shrink: 0; padding: 6px 2px;
 }
+.plan-drawer-actions {
+    display: flex; align-items: center; gap: 6px;
+}
 .plan-drawer-title {
     font-family: var(--font-mono); font-size: 0.7rem; font-weight: 800;
     letter-spacing: 0.1em; color: var(--accent-color);
@@ -1732,6 +1735,10 @@ h1 span[style*="accent-dim"] { color: var(--accent-dim) !important; }
    message exists. Overlay inside #main-chat; pointer-events pass through to the
    input except on the suggestion chips. app.js toggles display.
    ========================================================================== */
+body.code-run-visible #empty-state {
+    display: none !important;
+}
+
 .empty-state {
     position: absolute;
     inset: 0;

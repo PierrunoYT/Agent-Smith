@@ -512,18 +512,62 @@ function fallbackIdGroups(js) {
     return groups;
 }
 
+function levenshtein(a, b) {
+    const m = a.length;
+    const n = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            dp[i][j] = a[i - 1] === b[j - 1]
+                ? dp[i - 1][j - 1]
+                : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+    }
+    return dp[m][n];
+}
+
+function stem(tok) {
+    const t = String(tok).toLowerCase();
+    return t.endsWith('s') && t.length > 3 ? t.slice(0, -1) : t;
+}
+
 /** Closest existing id to a missing one — same token set (filter-type ↔ type-filter) wins. */
 function closestId(target, known) {
-    const toks = (s) => new Set(String(s).toLowerCase().split(/[-_]+/).filter(Boolean));
-    const tset = toks(target);
-    let fallback = null;
+    const tl = String(target).toLowerCase();
+    const toksKey = (s) => String(s).toLowerCase().split(/[-_]+/).filter(Boolean).sort().join('|');
+    const tKey = toksKey(target);
     for (const k of known) {
-        const kset = toks(k);
-        if (tset.size && tset.size === kset.size && [...tset].every(t => kset.has(t))) return k; // reordering
-        const overlap = [...tset].filter(t => kset.has(t)).length;
-        if (overlap && overlap >= tset.size - 1 && !fallback) fallback = k; // near-match
+        if (toksKey(k) === tKey) return k;
     }
-    return fallback;
+    for (const k of known) {
+        const kl = String(k).toLowerCase();
+        if (kl.includes(tl) || tl.includes(kl)) return k;
+    }
+    const tTokens = tl.split(/[-_]+/).filter(Boolean);
+    let bestStem = null;
+    let bestStemScore = 0;
+    for (const k of known) {
+        const kTokens = String(k).toLowerCase().split(/[-_]+/).filter(Boolean);
+        const score = tTokens.filter(t => kTokens.some(kt => t === kt || stem(t) === stem(kt))).length;
+        if (score > bestStemScore) {
+            bestStemScore = score;
+            bestStem = k;
+        }
+    }
+    if (bestStemScore >= Math.min(2, tTokens.length)) return bestStem;
+
+    let best = null;
+    let bestDist = Infinity;
+    for (const k of known) {
+        const d = levenshtein(tl, String(k).toLowerCase());
+        if (d < bestDist) {
+            bestDist = d;
+            best = k;
+        }
+    }
+    const limit = Math.max(4, Math.ceil(tl.length * 0.45));
+    return bestDist <= limit ? best : null;
 }
 
 /** name= and id= of the form controls present in the HTML. */

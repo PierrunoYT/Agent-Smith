@@ -12,12 +12,33 @@ const { fitBudget, estimateMessages } = require('../context/budget.js');
 const { compactForPhaseTransition } = require('../context/phaseCompact.js');
 const gemmaHarness = require('../context/gemmaHarness.js');
 const { checkCompletion, runValidation, formatGateMessage, formatBeforeDoneMessage, maxReflectionsForSession, runMilestoneVerify, goalImpliesBuildWork } = require('../governor/completionGate.js');
-const { buildWriteNudge, buildMissingRefsNudge } = require('../context/artifactHints.js');
+const { buildWriteNudge, buildMissingRefsNudge, goalImpliesNewArtifacts } = require('../context/artifactHints.js');
+const {
+    detectPartialDeliverableState,
+    pickNextWriteTarget,
+    buildPartialBuildNudge,
+    buildStallExhaustionNudge,
+    buildMalformedWriteRecoveryNudge
+} = require('../context/partialBuild.js');
+const {
+    buildDomContractNudge,
+    buildDomRepairNudge,
+    bootstrapDomRepair,
+    refreshPendingDomRepairs
+} = require('../context/htmlContract.js');
 const { maybeProactiveRuntimeCheck } = require('../governor/proactiveRuntime.js');
 const { buildFinalSummary } = require('./finalSummary.js');
 const { phaseHint, WRITE_TOOLS } = require('./phases.js');
 const { createDefaultMiddleware, runMiddlewareChain, applyPhaseAdvance } = require('./middleware.js');
 const { toContextBlock, stepProgress, advancePastExploreIfNeeded } = require('../plan/codePlan.js');
+const {
+    autoAdvancePlanSteps,
+    buildStalePlanStepNudge,
+    buildPlanCompleteGateNudge,
+    planProgressPayload,
+    planAllStepsDone,
+    collectPlanBlockers
+} = require('../plan/planStepAutoAdvance.js');
 const { MARK_CODE_STEP_DONE } = require('../tools/planTools.js');
 const { seedPendingMissingRefs, pickNextMissing } = require('./missingRefGuard.js');
 const { tryHarnessScaffold } = require('./harnessScaffold.js');
@@ -154,11 +175,20 @@ async function handleCompletionReflection(ctx, session, planArtifacts, execDeps,
                     role: 'system',
                     content: buildMissingRefsNudge(missingRefs, session.goal, session.projectRoot)
                 });
-            } else if (noFiles && goalImpliesBuildWork(session.goal)) {
-                session.messages.push({
-                    role: 'system',
-                    content: buildWriteNudge(session.goal, session.projectRoot)
-                });
+            } else {
+                const partialNudge = buildPartialBuildNudge(session, session.goal, session.projectRoot);
+                const domNudge = buildDomRepairNudge(session, gate.messages || []);
+                if (domNudge) {
+                    session.messages.push({ role: 'system', content: domNudge });
+                    session.phase = 'implement';
+                } else if (partialNudge) {
+                    session.messages.push({ role: 'system', content: partialNudge });
+                } else if (noFiles && goalImpliesBuildWork(session.goal)) {
+                    session.messages.push({
+                        role: 'system',
+                        content: buildWriteNudge(session.goal, session.projectRoot)
+                    });
+                }
             }
             emit({ type: 'run_continue', reason: 'gate_retry', reflection: session.completionReflections });
             if (trace) trace.verifyBlocked((gate.messages || []).slice(0, 4).join(' | '), session.completionReflections);
@@ -184,6 +214,133 @@ async function handleCompletionReflection(ctx, session, planArtifacts, execDeps,
     return { continue: false, gate, exitReason: null };
 }
 
+function emitPlanProgress(emit, session, extra = {}) {
+    if (!session.codePlan?.steps?.length || !emit) return;
+    emit({
+        type: 'plan_step_update',
+        ...planProgressPayload(
+            session.codePlan,
+            session.projectRoot,
+            session.goal,
+            session.filesTouched
+        ),
+        ...extra
+    });
+}
+
+function applyDomRepairIfNeeded(session, gateMessages, { pushNudge = false } = {}) {
+    // Read-only: recompute the pending DOM-mismatch list from disk, then nudge the model to
+    // patch script.js itself. The harness does NOT rewrite the model's code.
+    if (session?.projectRoot) {
+        refreshPendingDomRepairs(session);
+    }
+    const domNudge = buildDomRepairNudge(session, gateMessages);
+    if (!domNudge) {
+        if (session?.pendingDomRepairs) delete session.pendingDomRepairs;
+        return false;
+    }
+    if (pushNudge && !session._domBlockerNudgeSent) {
+        session._domBlockerNudgeSent = true;
+        session.messages.push({ role: 'system', content: domNudge });
+        session.phase = 'implement';
+    }
+    return true;
+}
+
+async function syncPlanProgressAndNudges(ctx, session, emit, { hadEdit = false } = {}) {
+    if (!session.codePlan?.steps?.length) return;
+
+    const planIdx = session.codePlan.currentStepIndex ?? 0;
+    if (session._planActiveIdx !== planIdx) {
+        session._planActiveIdx = planIdx;
+        session._planActiveSinceTurn = session.turn;
+        session._planStaleNudgeForIdx = null;
+    }
+
+    const auto = autoAdvancePlanSteps(
+        session.codePlan,
+        session.projectRoot,
+        session.filesTouched,
+        session.goal
+    );
+    if (auto.advanced > 0) {
+        session._planActiveIdx = session.codePlan.currentStepIndex ?? 0;
+        session._planActiveSinceTurn = session.turn;
+        session._planStaleNudgeForIdx = null;
+    }
+
+    emitPlanProgress(emit, session);
+
+    const allDone = planAllStepsDone(session.codePlan);
+    const blockers = collectPlanBlockers(session.projectRoot, session.goal, session.filesTouched);
+    const domMsgs = blockers.messages.filter(m => /^\[DOM\]/i.test(m));
+    if (domMsgs.length > 0) {
+        applyDomRepairIfNeeded(session, blockers.messages, { pushNudge: !session._domBlockerNudgeSent });
+        if (!hadEdit) {
+            session._domReadStreak = (session._domReadStreak || 0) + 1;
+            if (session._domReadStreak >= 2 && session._domReadNudgeTurn !== session.turn) {
+                session._domReadNudgeTurn = session.turn;
+                session._domReadStreak = 0;
+                const repeatNudge = buildDomRepairNudge(session, blockers.messages);
+                if (repeatNudge) {
+                    session.messages.push({ role: 'system', content: repeatNudge });
+                    session.phase = 'implement';
+                }
+            }
+        } else {
+            session._domReadStreak = 0;
+        }
+    }
+    if (allDone) {
+        const { count, messages } = blockers;
+        if (count > 0) {
+            if (!session._planCompleteGateNudge) {
+                session._planCompleteGateNudge = true;
+                const nudge = buildPlanCompleteGateNudge(session.goal, session.projectRoot, messages);
+                if (nudge) {
+                    session.messages.push({ role: 'system', content: nudge });
+                    session.phase = 'implement';
+                }
+                const domNudge = buildDomRepairNudge(session, messages);
+                if (domNudge) session.messages.push({ role: 'system', content: domNudge });
+            } else if (!hadEdit) {
+                session._planCompleteReadTurns = (session._planCompleteReadTurns || 0) + 1;
+                if (session._planCompleteReadTurns >= 3
+                    && session._planCompleteReadNudgeTurn !== session.turn) {
+                    session._planCompleteReadNudgeTurn = session.turn;
+                    session._planCompleteReadTurns = 0;
+                    const domNudge = buildDomRepairNudge(session, messages);
+                    if (domNudge) {
+                        session.messages.push({ role: 'system', content: domNudge });
+                        session.phase = 'implement';
+                    } else {
+                        session.messages.push({
+                            role: 'system',
+                            content: buildPlanCompleteGateNudge(session.goal, session.projectRoot, messages)
+                        });
+                    }
+                }
+            } else {
+                session._planCompleteReadTurns = 0;
+            }
+        }
+        return;
+    }
+
+    const turnsOnStep = session.turn - (session._planActiveSinceTurn ?? session.turn);
+    const staleNudge = buildStalePlanStepNudge(
+        session.codePlan,
+        session.projectRoot,
+        session.filesTouched,
+        session.goal,
+        turnsOnStep
+    );
+    if (staleNudge && session._planStaleNudgeForIdx !== planIdx) {
+        session._planStaleNudgeForIdx = planIdx;
+        session.messages.push({ role: 'system', content: staleNudge });
+    }
+}
+
 async function runTurnLoop(ctx) {
     const {
         session, apiBaseUrl, emit, signal, execDeps, planAnchor, planArtifacts,
@@ -203,6 +360,25 @@ async function runTurnLoop(ctx) {
         session.phase = 'implement';
         session._injectMissingRefsNudge = true;
     }
+    const partialState = detectPartialDeliverableState(
+        session.projectRoot, session.goal, session.filesTouched
+    );
+    if (partialState) {
+        session.phase = 'implement';
+        const merged = [...new Set([
+            ...(session.pendingMissingRefs || []),
+            ...partialState.missingRefs,
+            ...partialState.missingArtifacts
+        ])];
+        if (merged.length) session.pendingMissingRefs = merged;
+        if (!session._partialBuildNudgeInjected) {
+            session._partialBuildNudgeInjected = true;
+            const nudge = buildPartialBuildNudge(session, session.goal, session.projectRoot);
+            if (nudge) session.messages.push({ role: 'system', content: nudge });
+        }
+    }
+
+    bootstrapDomRepair(session, { pushMessages: true });
 
     async function finalize(reason, gate) {
         let validation;
@@ -311,7 +487,10 @@ async function runTurnLoop(ctx) {
 
         // No-progress backstop: stop early if the run keeps taking turns (e.g. read-only
         // exploration) without ever writing a file, instead of burning all 40 turns.
-        const progressCheck = earlyStop.onProgress(new Set(session.filesTouched || []).size);
+        const progressCheck = earlyStop.onProgress(new Set(session.filesTouched || []).size, {
+            hadEdit: !!session._turnHadEdit
+        });
+        session._turnHadEdit = false;
         if (progressCheck.stop) {
             emit({ type: 'error', code: 'NO_PROGRESS', message: progressCheck.reason });
             exitReason = progressCheck.reason;
@@ -322,11 +501,30 @@ async function runTurnLoop(ctx) {
         dedup.reset();
 
         // Empty workspace + nothing written yet → write-first: drop read/search/preview so the
-        // model creates files immediately instead of exploring an empty folder. Lifts as soon
-        // as the first file exists (then read_file/patch are back for verify/fixes).
-        const writeOnly = session.emptyWorkspace
-            && session.phase === 'implement'
-            && !(session.filesTouched || []).length;
+        // model creates files immediately instead of exploring an empty folder. Also applies to
+        // greenfield artifact goals in a non-empty host repo (turn 1), and to partial builds
+        // where HTML/CSS exist but linked JS/README are still missing.
+        const noWritesYet = !(session.filesTouched || []).length;
+        const pendingMissing = (session.pendingMissingRefs || []).length > 0;
+        const partialDeliverable = detectPartialDeliverableState(
+            session.projectRoot, session.goal, session.filesTouched
+        );
+        const writeFirstGoal = session.greenfield || goalImpliesNewArtifacts(session.goal);
+        const writeOnlyEmpty = session.phase === 'implement' && noWritesYet
+            && (session.emptyWorkspace || writeFirstGoal);
+        const writeOnlyPartial = session.phase === 'implement' && !noWritesYet
+            && (pendingMissing || !!partialDeliverable?.nextFile);
+        const preBlockers = collectPlanBlockers(
+            session.projectRoot, session.goal, session.filesTouched
+        );
+        if (preBlockers.messages.some(m => /^\[DOM\]/i.test(m))) {
+            applyDomRepairIfNeeded(session, preBlockers.messages, { pushNudge: false });
+        } else if ((session.pendingDomRepairs || []).length) {
+            refreshPendingDomRepairs(session); // read-only: clear if the model already fixed it
+        }
+        // NOTE: DOM repair does NOT force write-only — the model needs read_file to find the
+        // exact patch text in script.js. The repair nudge + the index.html-rewrite block guide it.
+        const writeOnly = writeOnlyEmpty || writeOnlyPartial;
         const tools = selectToolsForTurn({
             userPrompt: userPrompt || session.goal,
             turnIndex: session.turn - 1,
@@ -421,6 +619,20 @@ async function runTurnLoop(ctx) {
                 session.stallRetries = (session.stallRetries || 0) + 1;
                 if (session.stallRetries <= STALL_RETRY_LIMIT) {
                     emit({ type: 'stream_retry', turn: session.turn, attempt: session.stallRetries, message: `Model stalled mid-reply — retrying (${session.stallRetries}/${STALL_RETRY_LIMIT}).` });
+                    session.turn--;
+                    continue;
+                }
+                const stallNudge = buildStallExhaustionNudge(session, session.goal);
+                if (stallNudge && (session.stallRecoveryAttempts || 0) < 2) {
+                    session.stallRecoveryAttempts = (session.stallRecoveryAttempts || 0) + 1;
+                    session.messages.push({ role: 'system', content: stallNudge });
+                    session.phase = 'implement';
+                    session.turn--;
+                    emit({
+                        type: 'run_continue',
+                        reason: 'stall_recovery',
+                        attempt: session.stallRecoveryAttempts
+                    });
                     continue;
                 }
             }
@@ -461,10 +673,9 @@ async function runTurnLoop(ctx) {
                 pluginToolSchemas
             })
             : tools;
+        const salvageTarget = pickNextWriteTarget(session);
         extractFromMessage(msg, extractSchemas, {
-            salvagePath: (result.finishReason === 'length' && session.pendingMissingRefs?.length)
-                ? pickNextMissing(session.pendingMissingRefs)
-                : null
+            salvagePath: salvageTarget || null
         });
 
         // Reasoning-model guard: if the model spent the whole reply budget on internal
@@ -537,7 +748,11 @@ async function runTurnLoop(ctx) {
         while (pending.length) {
             const tc = pending.shift();
             const name = tc.function.name;
-            const args = tc.function.arguments || {};
+            let args = tc.function.arguments || {};
+            if ((name === 'write_file' || name === 'patch') && !args.path) {
+                const salvagedPath = pickNextWriteTarget(session);
+                if (salvagedPath) args = { ...args, path: salvagedPath };
+            }
             const dup = dedup.isDuplicate(name, args);
 
             const callId = tc.id || `call_${session.turn}_${session.toolCount}`;
@@ -568,6 +783,7 @@ async function runTurnLoop(ctx) {
             if (ok && name === 'run_command' && !args.is_background) session.agentRanOkAfterEdit = true;
             if (WRITE_TOOLS.has(name) && ok) session.agentRanOkAfterEdit = false;
             if (ok && WRITE_TOOLS.has(name)) dedup.clearFailures();
+            if (ok && WRITE_TOOLS.has(name)) session._turnHadEdit = true;
             dedup.recordResult(name, args, ok);
             qualityMonitor.record(name, ok, toolResult.error || toolResult.reason || toolResult.message);
             const stopCheck = earlyStop.onToolResult(ok, dup);
@@ -636,15 +852,26 @@ async function runTurnLoop(ctx) {
                 turn: session.turn
             });
 
+            if (!ok && name === 'write_file' && /requires a "path"/i.test(String(toolResult.error || ''))) {
+                const nudge = buildMalformedWriteRecoveryNudge(session, session.goal);
+                if (nudge) {
+                    session.messages.push({ role: 'system', content: nudge });
+                    session.phase = 'implement';
+                }
+            }
+
             if (ok && name === 'mark_code_step_done' && toolResult?.advanced) {
-                emit({ type: 'plan_step_update', codePlan: session.codePlan, complete: toolResult.complete });
+                session._planActiveIdx = session.codePlan.currentStepIndex ?? 0;
+                session._planActiveSinceTurn = session.turn;
+                session._planStaleNudgeForIdx = null;
+                emitPlanProgress(emit, session);
             }
 
             if (ok) {
                 trackFileTouch(session, name, args, toolResult);
                 planAnchor.recordDone(`${name} on ${args.path || args.pattern || args.command || ''}`);
                 if (toolWasWrite && advancePastExploreIfNeeded(session.codePlan, session.goal)) {
-                    emit({ type: 'plan_step_update', codePlan: session.codePlan, complete: false });
+                    emitPlanProgress(emit, session);
                 }
             }
 
@@ -679,6 +906,13 @@ async function runTurnLoop(ctx) {
                 session.messages.push({ role: 'system', content: nudge });
                 session.phase = 'implement';
             }
+        } else if (session._injectDomContractNudge) {
+            delete session._injectDomContractNudge;
+            const domNudge = buildDomContractNudge(session);
+            if (domNudge) {
+                session.messages.push({ role: 'system', content: domNudge });
+                session.phase = 'implement';
+            }
         } else {
             // Once the web project is structurally complete, load it in a real browser mid-build
             // and feed any runtime errors back so the model fixes them in-flight — without waiting
@@ -688,6 +922,10 @@ async function runTurnLoop(ctx) {
 
         await runMiddlewareChain(middleware, 'afterTurn', {
             ctx, session, payload: { turn: session.turn, reason: continueLoop ? null : 'model_stop' }
+        });
+
+        await syncPlanProgressAndNudges(ctx, session, emit, {
+            hadEdit: !!session._turnHadEdit
         });
 
         if (execDeps?.fireHook) {
