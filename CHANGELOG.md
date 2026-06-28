@@ -1,5 +1,16 @@
 # Agent Smith Changelog
 
+## [46.19.0] - 2026-06-28 — Code Mode: use the model's full context window
+
+Code Mode only — Chat and Agent Mode still use the context slider directly.
+
+### Added
+- **Code Mode now requests the model's loaded context window instead of the shared 8192 default.** Multi-file builds need room to hold the whole app in context; at 8192 the model drifts across files (kebab/camel id mismatches, "x is not a function" cross-module bugs, dropped requirements). The SAME budget-tracker task that failed at 8192 ctx passes cleanly once the window is raised — proven with real `runCodeTask` builds (gate done + a real browser confirms it renders, totals update, and persists).
+- New `src/code/loop/contextWindow.js`: reads the loaded window from LM Studio's native `/api/v0/models` endpoint and clamps the run's num_ctx to it — at least a floor (`XK_CODE_MIN_NUM_CTX`, default 16384), capped for inference speed (`XK_CODE_MAX_NUM_CTX`, default 32768), and **never above what the model is actually loaded with** (over-requesting would make the harness over-pack history and the backend silently truncate the prompt). On any non-LM-Studio backend where the loaded window can't be read, the requested value is respected unchanged (no risk). Wired into `runCodeTask` at the new-session chokepoint; emits a one-line advisory when it raises the window.
+
+Verified: suite 550/550, harness-eval 10/10, harness-security 6/6. Real E2E at the default num_ctx auto-raised to the loaded window and the budget tracker built and passed (gate done, acceptance + smoke PASS).
+
+
 ## [46.18.1] - 2026-06-28 — Code Mode: tighten plan-step auto-advance heuristics
 
 Code Mode only.

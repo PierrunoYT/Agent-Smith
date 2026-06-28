@@ -221,11 +221,22 @@ async function runCodeTask(opts) {
             session.status = 'running';
         }
     } else {
+        // Code Mode needs room to hold a multi-file app in context. Raise to the model's loaded
+        // window (floored/capped), never above what the backend actually has loaded.
+        const { resolveCodeNumCtx } = require('./contextWindow.js');
+        const ctxResolved = await resolveCodeNumCtx(numCtx, apiBaseUrl, model);
+        if (ctxResolved.numCtx !== (Number(numCtx) || 8192)) {
+            wrapEmit({
+                type: 'model_advisory',
+                message: `Code Mode context raised to ${ctxResolved.numCtx} tokens`
+                    + (ctxResolved.loadedContext ? ` (model loaded at ${ctxResolved.loadedContext})` : '')
+            });
+        }
         session = new CodeSession(sessionId, {
             goal: prompt,
             projectRoot,
             model,
-            numCtx,
+            numCtx: ctxResolved.numCtx,
             codeTemperature: opts.codeTemperature ?? 0.2
         });
         session.status = 'running';

@@ -187,7 +187,7 @@ async function pickModel(argvModel) {
             prompt: PROMPT,
             projectRoot,
             model,
-            numCtx: 8192,
+            numCtx: Number(process.env.NUMCTX) || 8192,
             apiBaseUrl: LMS,
             userDataPath,
             projectContext,
