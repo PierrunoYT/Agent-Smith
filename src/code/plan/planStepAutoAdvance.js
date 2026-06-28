@@ -87,12 +87,27 @@ function planAllStepsDone(plan) {
     return !!plan?.steps?.length && plan.steps.every(s => s.status === 'done');
 }
 
-/** Lightweight blocker scan for plan UI + nudges (no smoke/functional). */
+/**
+ * Lightweight blocker scan for plan UI + nudges (cheap static checks — not the full gate's
+ * smoke/functional/acceptance). The authoritative blocker count still comes from the real
+ * completion gate via verify_blocked; this just keeps the plan UI from reading "complete"
+ * while files are missing or selectors mismatch.
+ */
 function collectPlanBlockers(projectRoot, goal, filesTouched) {
     const messages = [];
     if (goalRequiresReadme(goal) && !fileExists(projectRoot, 'README.md')) {
         messages.push('[ARTIFACT] README.md is required by the prompt but missing');
     }
+    // Linked files index.html references but that don't exist on disk yet.
+    try {
+        const { findDeliverableIndexHtml, collectMissingRefsFromHtml } = require('../loop/missingRefGuard.js');
+        const htmlRel = findDeliverableIndexHtml(projectRoot, filesTouched || []);
+        if (htmlRel) {
+            for (const ref of collectMissingRefsFromHtml(projectRoot, htmlRel)) {
+                messages.push(`[WEB] index.html references "${ref}" but it is missing on disk`);
+            }
+        }
+    } catch (e) { /* ignore */ }
     messages.push(...domMismatchMessages(projectRoot));
     return { count: messages.length, messages };
 }
@@ -151,21 +166,53 @@ function isStepSatisfied(title, projectRoot, filesTouched, goal) {
         return false;
     }
 
+    // JS-feature steps: require evidence the feature is actually IMPLEMENTED, not that an
+    // incidental keyword appears (e.g. a stray `.filter()` for totals is not a filter UI; the
+    // ES `import`/`export` keywords are not a data import/export feature). The DOM-clean gate
+    // above already blocks these when selectors don't match.
     const js = readScript(projectRoot);
     if (js) {
-        if (/\blocalstorage\b|\bpersist/i.test(t) && /\blocalStorage\s*\.\s*(setItem|getItem)/i.test(js)) {
+        // Persistence: localStorage read or write.
+        if (/\blocalstorage\b|\bpersist/i.test(t)
+            && /\blocalStorage\s*\.\s*(setItem|getItem)/i.test(js)) {
             return true;
         }
-        if (/\bfilter/i.test(t) && /\bfilter/i.test(js)) return true;
-        if (/\bform\b|\btransaction/i.test(t)
-            && /(addEventListener\s*\(\s*['"]submit|transaction|getElementById)/i.test(js)) {
+        // Filter/search: a real input/select wired to a handler AND an actual .filter() call.
+        if (/\bfilter|\bsearch\b/i.test(t)
+            && /\.filter\s*\(/.test(js)
+            && /addEventListener\s*\(\s*['"](input|change|keyup|keydown|search|click)['"]/i.test(js)) {
             return true;
         }
-        if (/\bimport\b|\bexport\b/i.test(t) && /\b(import|export)\b/.test(js)) return true;
-        if (/\bcategor/i.test(t) && /\bcategor/i.test(js)) return true;
-        if (/\btheme\b|\bdark mode\b|\blight mode\b/i.test(t) && /\btheme\b/i.test(js)) return true;
+        // Form/transactions: a submit handler that actually mutates state or the DOM.
+        if (/\bform\b|\btransaction|\badd\b/i.test(t)
+            && /addEventListener\s*\(\s*['"]submit['"]/i.test(js)
+            && /(\.push\s*\(|\.unshift\s*\(|\.appendChild\s*\(|\.innerHTML\s*=|insertAdjacentHTML)/.test(js)) {
+            return true;
+        }
+        // Import/export DATA — NOT the ES module import/export keywords. Needs JSON + a
+        // blob/download/file-read path.
+        if (/\bimport\b|\bexport\b/i.test(t)
+            && /JSON\.stringify/.test(js)
+            && /(Blob|createObjectURL|download|FileReader|type\s*=\s*['"]file|accept\s*=\s*['"][^'"]*json)/i.test(js)) {
+            return true;
+        }
+        // Categories: a category list actually rendered/used (not just the word).
+        if (/\bcategor/i.test(t)
+            && /\bcategor/i.test(js)
+            && /(createElement|<option|appendChild|\.push\s*\(|\.map\s*\(|getElementById)/i.test(js)) {
+            return true;
+        }
+        // Theme: an actual toggle action, not just the word "theme".
+        if (/\btheme\b|\bdark mode\b|\blight mode\b/i.test(t)
+            && /(classList\s*\.\s*(toggle|add|remove)\s*\([^)]*\b(theme|dark|light)|data-theme|setAttribute\s*\(\s*['"]data-theme)/i.test(js)) {
+            return true;
+        }
+        // CRUD/interactions: a handler that mutates a list (add/remove/replace).
         if (/\binteractions?\b|\bcrud\b|add\/edit\/delete|edit.*delete/i.test(t)
-            && /(addEventListener|delete|edit)/i.test(js)) return true;
+            && /addEventListener/.test(js)
+            && /(\.push\s*\(|\.splice\s*\(|\.unshift\s*\(|=\s*\w+\.filter\s*\(|\.findIndex\s*\()/.test(js)) {
+            return true;
+        }
     }
 
     return false;

@@ -1,5 +1,13 @@
 # Agent Smith Changelog
 
+## [46.18.1] - 2026-06-28 — Code Mode: tighten plan-step auto-advance heuristics
+
+Code Mode only.
+
+### Fixed
+- **Plan steps no longer tick "done" on incidental keywords.** `isStepSatisfied` now requires evidence a feature is actually IMPLEMENTED, not merely mentioned: a filter step needs an input/change listener AND a real `.filter()`; a form/transaction step needs a `submit` handler that mutates state/DOM; CRUD needs a list mutation (push/splice); theme needs an actual toggle (classList/ data-theme), not the word "theme"; categories must be rendered/used. Also fixed a bug where data import/export matched the ES-module `import`/`export` keywords — it now requires `JSON.stringify` plus a blob/download/file path. The plan-UI blocker scan (`collectPlanBlockers`) also flags missing linked files so a plan can't read "complete" while assets are missing. (Plan auto-advance is advisory; the real completion gate stays authoritative.) Tests: `planStepAutoAdvance.test.js` (+2 tightening cases).
+
+
 ## [46.18.0] - 2026-06-28 — Code Mode: DOM-contract repair guidance + partial-build recovery (audited)
 
 Code Mode only — Chat and Agent Mode behavior is unchanged.

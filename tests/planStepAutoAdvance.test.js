@@ -44,11 +44,19 @@ document.getElementById('transaction-form').addEventListener('submit', () => {})
 `;
 
 const FIXED_JS = `
-document.getElementById('search-input').addEventListener('input', () => {});
-document.getElementById('total-income').textContent = '0';
-localStorage.setItem('a', 'b');
-items.filter(x => x.type === 'income');
-document.getElementById('transaction-form').addEventListener('submit', () => {});
+let items = JSON.parse(localStorage.getItem('txns') || '[]');
+document.getElementById('search-input').addEventListener('input', render);
+document.getElementById('transaction-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  items.push({ type: 'income', amount: 1 });
+  localStorage.setItem('txns', JSON.stringify(items));
+  render();
+});
+function render() {
+  const visible = items.filter(x => x.type === 'income');
+  document.getElementById('total-income').textContent = visible.length;
+}
+render();
 `;
 
 test('isStepSatisfied matches index.html, style.css, script.js steps', () => {
@@ -90,6 +98,37 @@ test('isStepSatisfied rejects JS-heavy steps when DOM ids mismatch HTML', () => 
     assert.equal(isStepSatisfied('Implement localStorage persistence', root, []), false);
     assert.equal(isStepSatisfied('Implement core interactions (add/edit/delete)', root, []), false);
     assert.equal(isStepSatisfied('Verify interactive app behavior', root, [], 'Create README.md app'), false);
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('TIGHTENED: incidental keywords do NOT mark a step done', () => {
+    // .filter() used only for a total, no filter UI; "theme"/"category" merely mentioned;
+    // ES module import/export keywords (not a data import/export feature).
+    const root = tmpProject({
+        'index.html': MATCHING_HTML,
+        'script.js': "import { x } from './y.js';\nexport const z = 1;\n"
+            + "const total = [].filter(t => t.type === 'income').length;\n"
+            + "// supports a theme and category later\n"
+    });
+    assert.equal(isStepSatisfied('Add filter by type', root, []), false, 'incidental .filter() is not a filter feature');
+    assert.equal(isStepSatisfied('Implement import/export to JSON', root, []), false, 'ES import/export keyword is not data import/export');
+    assert.equal(isStepSatisfied('Add a theme toggle', root, []), false, 'mentioning theme is not a toggle');
+    assert.equal(isStepSatisfied('Group by category', root, []), false, 'mentioning category is not implementing it');
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('TIGHTENED: real implementations DO satisfy their steps', () => {
+    const root = tmpProject({
+        'index.html': MATCHING_HTML,
+        'script.js': FIXED_JS
+            + "\nfunction exportData(){ const b = new Blob([JSON.stringify(items)]); URL.createObjectURL(b); }"
+            + "\ndocument.body.addEventListener('click', () => document.documentElement.classList.toggle('dark'));"
+    });
+    assert.equal(isStepSatisfied('Add filter by type', root, []), true);   // input listener + .filter()
+    assert.equal(isStepSatisfied('Wire up transaction form', root, []), true); // submit + push
+    assert.equal(isStepSatisfied('Implement core interactions (add/edit/delete)', root, []), true); // listener + push
+    assert.equal(isStepSatisfied('Import/export data as JSON', root, []), true); // JSON.stringify + Blob
+    assert.equal(isStepSatisfied('Add a theme toggle', root, []), true); // classList.toggle('dark')
     fs.rmSync(root, { recursive: true, force: true });
 });
 
