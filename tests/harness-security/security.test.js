@@ -53,16 +53,21 @@ test('pluginHookBypass — beforeToolCall block contract', async () => {
     const { HOOK_EVENTS } = require('../../src/main/services/pluginManager.js');
     assert.ok(HOOK_EVENTS.includes('beforeToolCall'));
     const pm = new PluginManager(os.tmpdir(), { logger: () => {} });
+    // The hook keys on the REAL fired payload field. The Agent loop and Code Mode
+    // executor fire beforeToolCall with { tool, name, args } — never `toolName` — so
+    // a hook that can read the tool name proves the documented contract is delivered.
     pm.registry.set('test', {
         enabled: true,
         hooks: [{
             event: 'beforeToolCall',
-            run: async () => ({ block: true, reason: 'test block' })
+            run: async (p) => (p.tool === 'patch' ? { block: true, reason: 'test block' } : undefined)
         }],
         manifest: { id: 'test' }
     });
-    const r = await pm.fireHook('beforeToolCall', { toolName: 'patch' });
-    assert.equal(r.blocked, true);
+    const r = await pm.fireHook('beforeToolCall', { tool: 'patch', name: 'patch', args: {} });
+    assert.equal(r.blocked, true, 'hook reads payload.tool from the fired { tool, name, args } shape');
+    const allowed = await pm.fireHook('beforeToolCall', { tool: 'read_file', name: 'read_file', args: {} });
+    assert.notEqual(allowed.blocked, true, 'non-matching tool name is not blocked');
 });
 
 test('grindInjection — build task cannot skip gate with empty files', async () => {
