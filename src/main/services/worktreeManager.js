@@ -5,26 +5,36 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const crypto = require('crypto');
+const { execSync, execFileSync } = require('child_process');
 
 function worktreeBase(projectRoot) {
     return path.join(projectRoot, '.agentsmith', 'worktrees');
 }
 
+// Collision-safe naming: include a short hash of the full id so two sessions
+// sharing a 40-char prefix do not reuse the wrong checkout. Previously the
+// truncated id alone could collide and createRunWorktree returned { reused:true }
+// for an existing path without checking branch/session ownership.
+function shortHash(s) {
+    return crypto.createHash('sha1').update(String(s)).digest('hex').slice(0, 8);
+}
+
 function branchName(sessionId) {
     const safe = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40);
-    return `agentsmith/run-${safe}`;
+    return `agentsmith/run-${safe}-${shortHash(sessionId)}`;
 }
 
 function worktreePath(projectRoot, sessionId) {
     const safe = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40);
-    return path.join(worktreeBase(projectRoot), safe);
+    return path.join(worktreeBase(projectRoot), `${safe}-${shortHash(sessionId)}`);
 }
 
 function milestoneKey(parentSessionId, milestoneId) {
     const parent = String(parentSessionId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 32);
     const ms = String(milestoneId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 12);
-    return `${parent}--${ms}`;
+    const key = `${parent}--${ms}`;
+    return `${key}-${shortHash(parentSessionId + ':' + milestoneId)}`;
 }
 
 function milestoneWorktreePath(projectRoot, parentSessionId, milestoneId) {
@@ -41,8 +51,32 @@ function childSessionId(parentSessionId, milestoneId) {
 
 function gitOk(projectRoot) {
     try {
-        execSync('git rev-parse --git-dir', { cwd: projectRoot, stdio: 'pipe' });
+        execFileSync('git', ['rev-parse', '--git-dir'], { cwd: projectRoot, stdio: 'pipe' });
         return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+/** Verify an existing worktree path points at the expected branch before reuse. */
+function worktreeBranchMatches(projectRoot, wtPath, expectedBranch) {
+    try {
+        const out = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+            cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8'
+        });
+        // Each worktree entry: `worktree <path>\n` then `branch refs/heads/<branch>\n` (or detached).
+        const blocks = String(out).split(/\n\n/);
+        for (const block of blocks) {
+            const lines = block.split('\n');
+            const wtLine = lines.find(l => l.startsWith('worktree '));
+            const brLine = lines.find(l => l.startsWith('branch '));
+            if (wtLine && path.resolve(wtLine.slice('worktree '.length)) === path.resolve(wtPath)) {
+                if (!brLine) return false; // detached HEAD — not our branch
+                const br = brLine.slice('branch '.length).replace(/^refs\/heads\//, '');
+                return br === expectedBranch;
+            }
+        }
+        return false;
     } catch (e) {
         return false;
     }
@@ -61,14 +95,21 @@ function createRunWorktree(projectRoot, sessionId) {
     fs.mkdirSync(worktreeBase(projectRoot), { recursive: true });
 
     if (fs.existsSync(wtPath)) {
-        return { path: wtPath, branch, reused: true };
+        // Verify the existing worktree points at our branch before reusing — a
+        // truncated-id collision could otherwise reuse stale files from an
+        // unrelated earlier run.
+        if (worktreeBranchMatches(projectRoot, wtPath, branch)) {
+            return { path: wtPath, branch, reused: true };
+        }
+        return { error: `Worktree path ${wtPath} already exists but does not point at branch ${branch}. Refusing to reuse an unrelated checkout.` };
     }
 
     try {
-        execSync(`git worktree add -B "${branch}" "${wtPath}"`, {
-            cwd: projectRoot,
-            stdio: 'pipe',
-            encoding: 'utf-8'
+        // execFileSync with argv — paths/branches are argv values, not shell syntax,
+        // so a repository path containing a double quote or shell metacharacter cannot
+        // break quoting and change the command.
+        execFileSync('git', ['worktree', 'add', '-B', branch, wtPath], {
+            cwd: projectRoot, stdio: 'pipe', encoding: 'utf-8'
         });
         return { path: wtPath, branch };
     } catch (e) {
@@ -80,17 +121,15 @@ function cleanupWorktree(projectRoot, sessionId) {
     const wtPath = worktreePath(projectRoot, sessionId);
     if (!fs.existsSync(wtPath)) return { ok: true, skipped: true };
     try {
-        execSync(`git worktree remove "${wtPath}" --force`, {
-            cwd: projectRoot,
-            stdio: 'pipe',
-            encoding: 'utf-8'
+        execFileSync('git', ['worktree', 'remove', wtPath, '--force'], {
+            cwd: projectRoot, stdio: 'pipe', encoding: 'utf-8'
         });
     } catch (e) {
         try { fs.rmSync(wtPath, { recursive: true, force: true }); } catch (e2) { /* ignore */ }
     }
     const branch = branchName(sessionId);
     try {
-        execSync(`git branch -D "${branch}"`, { cwd: projectRoot, stdio: 'pipe' });
+        execFileSync('git', ['branch', '-D', branch], { cwd: projectRoot, stdio: 'pipe' });
     } catch (e) { /* branch may not exist */ }
     return { ok: true };
 }
@@ -108,14 +147,15 @@ function createMilestoneWorktree(projectRoot, parentSessionId, milestoneId) {
     fs.mkdirSync(worktreeBase(projectRoot), { recursive: true });
 
     if (fs.existsSync(wtPath)) {
-        return { path: wtPath, branch, reused: true };
+        if (worktreeBranchMatches(projectRoot, wtPath, branch)) {
+            return { path: wtPath, branch, reused: true };
+        }
+        return { error: `Milestone worktree path ${wtPath} already exists but does not point at branch ${branch}. Refusing to reuse an unrelated checkout.` };
     }
 
     try {
-        execSync(`git worktree add -B "${branch}" "${wtPath}"`, {
-            cwd: projectRoot,
-            stdio: 'pipe',
-            encoding: 'utf-8'
+        execFileSync('git', ['worktree', 'add', '-B', branch, wtPath], {
+            cwd: projectRoot, stdio: 'pipe', encoding: 'utf-8'
         });
         return { path: wtPath, branch };
     } catch (e) {
@@ -127,29 +167,48 @@ function cleanupMilestoneWorktree(projectRoot, parentSessionId, milestoneId) {
     const wtPath = milestoneWorktreePath(projectRoot, parentSessionId, milestoneId);
     if (!fs.existsSync(wtPath)) return { ok: true, skipped: true };
     try {
-        execSync(`git worktree remove "${wtPath}" --force`, {
-            cwd: projectRoot,
-            stdio: 'pipe',
-            encoding: 'utf-8'
+        execFileSync('git', ['worktree', 'remove', wtPath, '--force'], {
+            cwd: projectRoot, stdio: 'pipe', encoding: 'utf-8'
         });
     } catch (e) {
         try { fs.rmSync(wtPath, { recursive: true, force: true }); } catch (e2) { /* ignore */ }
     }
     const branch = milestoneBranchName(parentSessionId, milestoneId);
     try {
-        execSync(`git branch -D "${branch}"`, { cwd: projectRoot, stdio: 'pipe' });
+        execFileSync('git', ['branch', '-D', branch], { cwd: projectRoot, stdio: 'pipe' });
     } catch (e) { /* branch may not exist */ }
     return { ok: true };
 }
 
-/** Copy touched files from milestone worktree into main checkout. */
+/** Copy touched files from milestone worktree into main checkout.
+ *  Each relPath is confined to its root — `../` segments or absolute paths are
+ *  rejected so a child session recording a touched path like `../victim.txt`
+ *  cannot make the sync step copy from outside the worktree or overwrite outside
+ *  the main project. */
 function syncWorktreeFiles(mainRoot, worktreeRoot, relPaths) {
     const synced = [];
     const errors = [];
+    const isContained = (root, abs) => {
+        const rel = path.relative(path.resolve(root), path.resolve(abs));
+        return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+    };
     for (const rel of [...new Set((relPaths || []).filter(Boolean))]) {
         const normalized = rel.replace(/\\/g, '/');
+        // Reject absolute paths and `..` segments before joining.
+        if (path.isAbsolute(normalized)) {
+            errors.push({ path: normalized, error: 'absolute paths are not allowed' });
+            continue;
+        }
         const src = path.join(worktreeRoot, normalized);
         const dst = path.join(mainRoot, normalized);
+        if (!isContained(worktreeRoot, src)) {
+            errors.push({ path: normalized, error: 'source path escapes the worktree root' });
+            continue;
+        }
+        if (!isContained(mainRoot, dst)) {
+            errors.push({ path: normalized, error: 'destination path escapes the main project root' });
+            continue;
+        }
         try {
             if (!fs.existsSync(src)) {
                 errors.push({ path: normalized, error: 'missing in worktree' });

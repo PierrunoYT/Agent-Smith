@@ -49,14 +49,50 @@ class ChangeLedger {
         const snapshotId = `snap_${this.snapCounter}`;
         const snapFile = path.join(this.getLedgerDir(planId), `${snapshotId}.bin`);
 
+        // Distinguish "target did not exist" from "snapshot failed". Previously a
+        // single broad try/catch set existed=false on ANY failure (read error, disk
+        // full, EISDIR on a directory), so a later revertAll treated an existing file
+        // as newly created and unlinked it instead of restoring the original — a
+        // destructive revert. Now: probe existence first; if it exists but the read
+        // or snapshot write fails, abort the mutation by returning an error so the
+        // caller does not proceed; if it genuinely does not exist, record existed=false.
         let existed = false;
+        let isDir = false;
         try {
             await fsPromises.access(filePath);
             existed = true;
-            const content = await fsPromises.readFile(filePath);
-            await fsPromises.writeFile(snapFile, content);
+            const stat = await fsPromises.stat(filePath);
+            isDir = stat.isDirectory();
         } catch (e) {
+            // ENOENT -> genuinely not present; any other access error is a snapshot failure.
+            if (e.code !== 'ENOENT') {
+                return { snapshotId, existed: false, error: `snapshot failed (access): ${e.message}` };
+            }
             existed = false;
+        }
+
+        if (existed) {
+            if (isDir) {
+                // Directories cannot be content-snapshotted; record as audit-only so
+                // revertAll does not treat them as newly-created files to unlink.
+                entries.push({
+                    path: filePath,
+                    action,
+                    snapshotId,
+                    existed: true,
+                    isDir: true,
+                    snapshotFailed: true,
+                    ts: Date.now()
+                });
+                await this.saveManifest(planId, entries);
+                return { snapshotId, existed: true, isDir: true };
+            }
+            try {
+                const content = await fsPromises.readFile(filePath);
+                await fsPromises.writeFile(snapFile, content);
+            } catch (e) {
+                return { snapshotId, existed: true, error: `snapshot failed (read/write): ${e.message}` };
+            }
         }
 
         entries.push({
@@ -70,7 +106,7 @@ class ChangeLedger {
         return { snapshotId, existed };
     }
 
-    async recordCreate(planId, filePath) {
+    async recordCreate(planId, filePath, opts = {}) {
         await this.ensureDir(planId);
         const entries = await this.loadManifest(planId);
         this.snapCounter += 1;
@@ -80,6 +116,7 @@ class ChangeLedger {
             action: 'create',
             snapshotId,
             existed: false,
+            isDir: !!opts.isDir,
             ts: Date.now()
         });
         await this.saveManifest(planId, entries);
@@ -192,10 +229,22 @@ class ChangeLedger {
         for (let i = entries.length - 1; i >= 0; i--) {
             const entry = entries[i];
             try {
+                if (entry.snapshotFailed && entry.existed) {
+                    // We could not capture the original content (e.g. a directory, or a
+                    // read/disk error at snapshot time). Do NOT treat it as newly
+                    // created — unlinking would destroy real data. Record as audit-only.
+                    errors.push(`${entry.path}: cannot restore (snapshot was audit-only at mutation time)`);
+                    continue;
+                }
                 if (entry.action === 'create' || !entry.existed) {
                     try {
-                        await fsPromises.unlink(entry.path);
-                        reverted.push(`Deleted created file: ${entry.path}`);
+                        if (entry.isDir) {
+                            await fsPromises.rm(entry.path, { recursive: true, force: true });
+                            reverted.push(`Deleted created directory: ${entry.path}`);
+                        } else {
+                            await fsPromises.unlink(entry.path);
+                            reverted.push(`Deleted created file: ${entry.path}`);
+                        }
                     } catch (e) {
                         if (e.code !== 'ENOENT') errors.push(`${entry.path}: ${e.message}`);
                     }

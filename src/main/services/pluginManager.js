@@ -348,8 +348,11 @@ class PluginManager {
         if (!found) return `Error: no enabled plugin provides tool "${toolName}".`;
 
         // Opt-in: run in an OS-sandboxed child process (no child_process/worker, fs scoped
-        // to the project root). Falls back to in-process on any sandbox infra failure so
-        // functionality is never lost — only the isolation guarantee is.
+        // to the project root). When sandbox mode is enabled we FAIL CLOSED on any sandbox
+        // infrastructure failure — a misconfigured Node permission model or a plugin that
+        // intentionally breaks sandbox startup must not silently regain full main-process
+        // privileges. The previous behavior fell back to in-process execution, turning a
+        // requested isolation policy into full trust without surfacing the failure.
         if (this.sandbox && this._sandbox && this._sandbox.permissionSupported() && found.tool.file) {
             try {
                 return await this._sandbox.runToolSandboxed({
@@ -361,7 +364,7 @@ class PluginManager {
                     broker: this._buildSandboxBroker(found.plugin),
                 });
             } catch (e) {
-                this.log(`sandbox failed for "${toolName}" (${e.message}); falling back in-process`);
+                return `Error: sandbox mode is enabled but the sandbox failed for tool "${toolName}" (${e.message}). Refusing to fall back to in-process execution — disable sandbox mode or fix the sandbox infrastructure to run this plugin.`;
             }
         }
 
@@ -406,6 +409,24 @@ class PluginManager {
             const cmd = plugin.commands.find((c) => c.name === name);
             if (!cmd) continue;
             if (typeof cmd.run === 'function') {
+                // Route through the sandbox when enabled — commands are plugin code and
+                // must not bypass the opt-in isolation policy (previously they always
+                // ran in-process, so a malicious command could regain full privileges).
+                if (this.sandbox && this._sandbox && this._sandbox.permissionSupported() && cmd.file) {
+                    try {
+                        const r = await this._sandbox.runToolSandboxed({
+                            pluginDir: plugin.dir,
+                            toolFile: cmd.file,
+                            args: { argText: argText || '' },
+                            grantedCaps: plugin.grantedCaps,
+                            projectRoot: this.projectContext ? this.projectContext.getRoot() : null,
+                            broker: this._buildSandboxBroker(plugin),
+                        });
+                        return r;
+                    } catch (e) {
+                        return `Error: sandbox failed for command "${name}" (${e.message}). Refusing to fall back to in-process execution.`;
+                    }
+                }
                 const host = this._buildHost(plugin);
                 return await cmd.run(argText || '', host);
             }
@@ -422,8 +443,26 @@ class PluginManager {
             for (const h of plugin.hooks) {
                 if (h.event !== event) continue;
                 try {
-                    const host = this._buildHost(plugin);
-                    const r = await h.run(payload, host);
+                    let r;
+                    // Route hooks through the sandbox when enabled — same rationale as
+                    // commands: hooks are plugin code and must not bypass isolation.
+                    if (this.sandbox && this._sandbox && this._sandbox.permissionSupported() && h.file) {
+                        const sandboxed = await this._sandbox.runToolSandboxed({
+                            pluginDir: plugin.dir,
+                            toolFile: h.file,
+                            args: { event, payload },
+                            grantedCaps: plugin.grantedCaps,
+                            projectRoot: this.projectContext ? this.projectContext.getRoot() : null,
+                            broker: this._buildSandboxBroker(plugin),
+                        });
+                        // The sandbox returns a string; parse {block,reason} if present.
+                        if (typeof sandboxed === 'string' && sandboxed.startsWith('{')) {
+                            try { r = JSON.parse(sandboxed); } catch (e) { r = null; }
+                        }
+                    } else {
+                        const host = this._buildHost(plugin);
+                        r = await h.run(payload, host);
+                    }
                     if (event.startsWith('before') && r && r.block) {
                         result = { blocked: true, reason: r.reason || `blocked by plugin ${plugin.manifest.id}`, by: plugin.manifest.id };
                         return result; // first veto wins
@@ -444,6 +483,12 @@ class PluginManager {
         const caps = grantedCaps != null
             ? pluginHost.validCaps(grantedCaps).filter((c) => plugin.manifest.capabilities.includes(c))
             : plugin.grantedCaps;
+        // Persist the state change BEFORE mutating the live registry so a write
+        // failure does not leave the in-process state diverged from what will be
+        // loaded on restart. Previously a saveState() throw propagated as a generic
+        // 500 after the in-memory enablement had already happened.
+        const prevEnabled = plugin.enabled;
+        const prevCaps = plugin.grantedCaps;
         plugin.enabled = !!enabled;
         plugin.grantedCaps = caps;
         // Trust-on-enable: snapshot the current content hash as the approved bytes. A later
@@ -456,6 +501,7 @@ class PluginManager {
             plugin.integrityHash = trustedHash;
             if (wasIntegrityQuarantined) { plugin.loadError = null; plugin.error = null; }
         }
+        const prevEntry = this.state[id];
         this.state[id] = {
             ...(this.state[id] || {}),
             enabled: !!enabled,
@@ -463,7 +509,15 @@ class PluginManager {
             version: plugin.manifest.version,
             trustedHash,
         };
-        this.saveState();
+        try {
+            this.saveState();
+        } catch (e) {
+            // Roll back the in-memory state so it matches the persisted state.
+            plugin.enabled = prevEnabled;
+            plugin.grantedCaps = prevCaps;
+            this.state[id] = prevEntry;
+            return { error: `could not persist plugin state: ${e.message}. Enablement was not changed.` };
+        }
         // If we just re-trusted a quarantined plugin, its contributions were never loaded
         // (we skipped require() of the changed code) — reload them now that it's trusted.
         if (enabled && wasIntegrityQuarantined) {
@@ -480,13 +534,24 @@ class PluginManager {
     uninstall(id) {
         const plugin = this.registry.get(id);
         if (!plugin) return { error: `unknown plugin ${id}` };
+        // Persist the state removal BEFORE deleting files/registry so a write failure
+        // does not leave the registry diverged from what will load on restart.
+        const prevEntry = this.state[id];
+        delete this.state[id];
+        try {
+            this.saveState();
+        } catch (e) {
+            this.state[id] = prevEntry;
+            return { error: `could not persist plugin state: ${e.message}. Uninstall was not performed.` };
+        }
         try {
             this.fs.rmSync(plugin.dir, { recursive: true, force: true });
         } catch (e) {
+            // Restore state since the directory removal failed.
+            this.state[id] = prevEntry;
+            try { this.saveState(); } catch (e2) { /* best effort */ }
             return { error: `failed to remove ${id}: ${e.message}` };
         }
-        delete this.state[id];
-        this.saveState();
         this.registry.delete(id);
         return { success: true };
     }

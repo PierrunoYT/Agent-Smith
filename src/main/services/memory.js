@@ -230,16 +230,18 @@ class MemoryManager {
 
     clearMemory() {
         this.vectors = [];
-        this.saveJSON(this.vectorDBPath, this.vectors);
-        return true;
+        const persisted = this.saveJSON(this.vectorDBPath, this.vectors);
+        return persisted ? { success: true } : { success: false, error: 'Memory cleared in memory only — the vector database could not be persisted (userData dir not writable or full). The change will be lost on restart.' };
     }
 
     async storeVector(text, metadata = {}) {
         const embedding = await this.getEmbedding(text);
         if (embedding) {
             this.vectors.push({ text, embedding, metadata, timestamp: Date.now() });
-            this.saveJSON(this.vectorDBPath, this.vectors);
-            return { success: true };
+            const persisted = this.saveJSON(this.vectorDBPath, this.vectors);
+            return persisted
+                ? { success: true }
+                : { success: false, error: 'Memory saved in memory only — the vector database could not be persisted (userData dir not writable or full). The memory will be lost on restart.' };
         }
         return { success: false, error: "Embedding failed. In LM Studio, load an embedding model and keep the local server running." };
     }

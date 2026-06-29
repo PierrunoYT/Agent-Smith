@@ -162,10 +162,27 @@ function applyUnifiedDiff(original, hunks) {
     return lines.join('\n');
 }
 
-function applyPatchToFile(original, patchText) {
+function applyPatchToFile(original, patchText, opts = {}) {
     const parsed = parseUnifiedDiff(patchText);
     if (!parsed.length) return { error: 'No files in patch' };
+    // Reject multi-file patches when applied through the single-file applyPatch
+    // entrypoint. Previously this silently applied only parsed[0] and dropped every
+    // later file hunk while reporting success — a multi-file patch could also apply
+    // the first file's hunks to a DIFFERENT caller-supplied filepath. Now: refuse
+    // multi-file patches and verify the parsed path matches the expected target.
+    if (parsed.length > 1 && !opts.allowMultiFile) {
+        return { error: `Patch contains ${parsed.length} files; apply_patch operates on a single file. Apply each file's hunks separately, or use write_file.` };
+    }
     const file = parsed[0];
+    if (opts.expectedPath) {
+        const expected = String(opts.expectedPath).replace(/\\/g, '/');
+        const parsedPath = String(file.path).replace(/\\/g, '/');
+        // Compare the basename + tail so a/ prefixes and absolute vs relative forms match.
+        const norm = (p) => p.replace(/^a\//, '').replace(/^b\//, '').replace(/^\.\//, '');
+        if (norm(parsedPath) !== norm(expected) && !norm(expected).endsWith('/' + norm(parsedPath)) && !norm(parsedPath).endsWith('/' + norm(expected))) {
+            return { error: `Patch target "${file.path}" does not match the file being edited ("${opts.expectedPath}"). Re-read the file and regenerate the patch.` };
+        }
+    }
     try {
         const content = applyUnifiedDiff(original, file.hunks);
         return { content, path: file.path };

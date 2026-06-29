@@ -11,6 +11,23 @@ const { validatePreviewUrl, validatePreviewAssetPath } = require('../../shared/n
 
 const CAPTURE_TIMEOUT_MS = 20000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+// Clamp viewport dimensions so a model/user-supplied width/height cannot throw,
+// allocate excessive GPU/bitmap memory, or destabilize Electron during capture.
+const MIN_VIEWPORT_DIM = 100;
+const MAX_VIEWPORT_DIM = 4096;
+
+function clampViewport(vp) {
+    // Treat undefined/null/NaN as "use default"; 0, negative, and finite values are
+    // explicit inputs that get clamped into range (a 0 or negative height clamps up
+    // to MIN, rather than silently becoming the default 720 via a falsy || fallback).
+    const num = (v, def) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : def;
+    };
+    const w = Math.max(MIN_VIEWPORT_DIM, Math.min(MAX_VIEWPORT_DIM, Math.floor(num(vp?.width, DEFAULT_VIEWPORT.width))));
+    const h = Math.max(MIN_VIEWPORT_DIM, Math.min(MAX_VIEWPORT_DIM, Math.floor(num(vp?.height, DEFAULT_VIEWPORT.height))));
+    return { width: w, height: h };
+}
 
 function newPreviewId() {
     return `pv_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -81,7 +98,7 @@ async function captureWebUrl(targetUrl, viewport, deps) {
     const BrowserWindow = deps?.BrowserWindow || electron?.BrowserWindow;
     if (!BrowserWindow) return { error: 'Web capture requires Electron (not available in this environment).' };
 
-    const vp = Object.assign({}, DEFAULT_VIEWPORT, viewport || {});
+    const vp = clampViewport(Object.assign({}, DEFAULT_VIEWPORT, viewport || {}));
     let win;
     try {
         win = new BrowserWindow({
@@ -192,5 +209,8 @@ module.exports = {
     captureDesktopSource,
     listDesktopSources,
     assetPathForId,
-    DEFAULT_VIEWPORT
+    clampViewport,
+    DEFAULT_VIEWPORT,
+    MIN_VIEWPORT_DIM,
+    MAX_VIEWPORT_DIM
 };
