@@ -1044,7 +1044,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- **LOW — action-log state is not isolated to the throwaway harness directory.** The script calls `createActionLog(userDataPath)`, but `createActionLog` expects an object with `userDataPath`; a string argument makes `deps.userDataPath` undefined, so the log file falls back to `./action-log.json` in the process working directory. The 100-task battery can therefore create or reuse a real repo/cwd action log, leave it behind after cleanup, and let stale actions affect the review/undo tasks. Fix: call `createActionLog({ userDataPath })` and delete any accidental cwd log in a one-time migration/cleanup if needed. Related code: `scripts/agent-assistant-100-e2e.js:57-70`, `src/main/services/actionLog.js:20-30`, `scripts/agent-assistant-100-e2e.js:803-808`.
+- **FIXED in `fix-batch-9` (`0c3369f`) — LOW — action-log state is not isolated to the throwaway harness directory.** The script called `createActionLog(userDataPath)`, but `createActionLog` expects an object with `userDataPath`; a string argument made `deps.userDataPath` undefined, so the log file fell back to `./action-log.json` in the process working directory and could leave a real cwd log behind, letting stale actions affect the review/undo tasks. Fixed by calling `createActionLog({ userDataPath })`. Related code: `scripts/agent-assistant-100-e2e.js:57-70`, `src/main/services/actionLog.js:20-30`, `scripts/agent-assistant-100-e2e.js:803-808`.
 
 ### `scripts/agent-assistant-parity-e2e.js`
 
@@ -1104,7 +1104,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- **LOW — harness executes model-created filenames through a shell string.** The `runFile` helper builds `execSync(`${runner} "${absPath}" ${args}`, ...)` and `fileFor()` chooses a file by basename from the model-controlled workspace. A generated filename containing a double quote or shell metacharacters can break the quoted path and cause the post-task checker to run unintended shell syntax, outside the app's normal `commandPolicy` path. Fix: use `execFileSync(runner, [absPath, ...argsArray], { cwd: WS, ... })` and keep task arguments as argv arrays. Related code: `scripts/code-mode-100-e2e.js:102-114`.
+- **FIXED in `fix-batch-9` (`0c3369f`) — LOW — harness executes model-created filenames through a shell string.** The `runFile` helper built `execSync(`${runner} "${absPath}" ${args}`, ...)` and `fileFor()` chooses a file by basename from the model-controlled workspace, so a generated filename containing a double quote or shell metacharacters could break the quoted path and run unintended shell syntax outside the app's normal `commandPolicy` path. Fixed by using `execFileSync(runner, [absPath, ...argv], { cwd: WS, ... })` with task arguments kept as an argv array. Related code: `scripts/code-mode-100-e2e.js:108-114`.
 
 ### `scripts/code-smoke.js`
 
@@ -1140,7 +1140,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- **LOW — password-assisted share links cannot log in because auth args use the wrong shape.** The helper posts `{ channel:'auth-login', args:[username, password] }` to `/api/invoke`, but the auth IPC handler expects a single object argument `{ username, password }`. The web proxy spreads the array into the handler, so `auth-login` destructures the username string and receives `username/password` as `undefined`; any run with `AGENT_SMITH_SHARE_PASSWORD` fails instead of appending a token. Fix: send `args: [{ username, password }]` (and consider avoiding query-string tokens altogether; the renderer download-token leak is already recorded). Related code: `scripts/print-download-link.js:68-75`, `main.js:872-915`, `src/main/ipc/auth.js:11-17`.
+- **FIXED in `fix-batch-9` (`0c3369f`) — LOW — password-assisted share links cannot log in because auth args use the wrong shape.** The helper posted `{ channel:'auth-login', args:[username, password] }` to `/api/invoke`, but the auth IPC handler expects a single object argument `{ username, password }`. The web proxy spread the array into the handler, so `auth-login` destructured the username string and received `username/password` as `undefined`; any run with `AGENT_SMITH_SHARE_PASSWORD` failed instead of appending a token. Fixed by sending `args: [{ username, password }]`. Related code: `scripts/print-download-link.js:68-75`, `main.js:872-915`, `src/main/ipc/auth.js:11-17`.
 
 ### `scripts/readiness-report.js`
 
