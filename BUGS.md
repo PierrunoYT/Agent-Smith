@@ -1408,7 +1408,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **FIXED in `fix-batch-11` (`9bf1f63`) — LOW — plugin-hook test asserts against a payload shape the app never fires.** The `pluginHookBypass` test called `pm.fireHook('beforeToolCall', { toolName: 'patch' })`, but the renderer Agent loop and Code Mode executor fire `beforeToolCall` with `{ tool, name, args }` (the same `toolName` mismatch behind the batch-10 example-hook bug). The test passed only because its hook returned `{ block: true }` unconditionally, ignoring the payload — so it gave false confidence that plugins can read the tool name. Fixed by keying the test hook on `payload.tool`, firing the real `{ tool, name, args }` shape, and asserting both the blocked and non-blocked branches so the test now exercises the documented contract. Related code: `tests/harness-security/security.test.js:51-66`, `src/code/tools/executor.js:111-114`, `src/renderer/modes/chatLoop.js:25-28`. (The same `toolName` issue in `tests/pluginSystem.test.js` is tracked under Batch 12.)
 
 ### `tests/harnessExitPaths.test.js`
 
