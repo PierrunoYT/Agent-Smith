@@ -329,7 +329,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- **LOW — phase compaction can drop tool results from multi-tool assistant turns.** `collectRecentToolPairs` only preserves a `tool` message when the immediately previous message is an `assistant` with `tool_calls`. For an assistant turn that emits multiple tool calls followed by multiple `tool` messages, only the first adjacent pair is kept and later tool results are skipped during compaction. This can remove relevant recent tool output at phase transitions. Fix: group all consecutive `tool` messages following each assistant `tool_calls` message, or match by `tool_call_id` when present. Related code: `src/code/context/phaseCompact.js:15-27`.
+- **FIXED in `fix-batch-2` (`a77af66`) — LOW — phase compaction can drop tool results from multi-tool assistant turns.** `collectRecentToolPairs` only preserves a `tool` message when the immediately previous message is an `assistant` with `tool_calls`. For an assistant turn that emits multiple tool calls followed by multiple `tool` messages, only the first adjacent pair is kept and later tool results are skipped during compaction. Fixed by grouping all consecutive `tool` messages following each assistant `tool_calls` message and preserving the last grouped turns. Related code: `src/code/context/phaseCompact.js:15-27`.
 
 ### `src/code/context/planAnchor.js`
 
@@ -341,7 +341,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- **MEDIUM — default Final milestone is not parsed as a milestone with verify command.** `defaultPlanContent` writes `- [ ] **Final: all checks pass** — verify: \`harness completion gate\`` without the `| verify:` separator required by `MILESTONE_RE`. Because M1/M2 do match the strict regex, `reloadMilestones` never falls back to `MILESTONE_SIMPLE`, so the Final milestone is omitted entirely from `this.milestones`. Result: long-horizon plans may track only M1/M2 and never expose/advance the final verification milestone. Fix: make the default Final line use `| verify: ...`, or loosen `MILESTONE_RE` to accept both `| verify:` and `— verify:` consistently. Related code: `src/code/context/planArtifacts.js:15-18`, `src/code/context/planArtifacts.js:61-63`, `src/code/context/planArtifacts.js:168-194`.
+- **FIXED in `fix-batch-2` (`a77af66`) — MEDIUM — default Final milestone is not parsed as a milestone with verify command.** `defaultPlanContent` writes `- [ ] **Final: all checks pass** — verify: \`harness completion gate\`` without the `| verify:` separator required by `MILESTONE_RE`. Because M1/M2 do match the strict regex, `reloadMilestones` never falls back to `MILESTONE_SIMPLE`, so the Final milestone is omitted entirely from `this.milestones`. Fixed by making the default Final line use `| verify:` and loosening the milestone regexes to accept both `|` and em-dash separators. Related code: `src/code/context/planArtifacts.js:15-18`, `src/code/context/planArtifacts.js:61-63`, `src/code/context/planArtifacts.js:168-194`.
 
 ### `src/code/context/symbolMap.js`
 
