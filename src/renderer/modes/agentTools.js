@@ -358,7 +358,7 @@ TOOL PROTOCOL: To use a tool, emit a real function/tool call via the native tool
             let cmd = a.command;
             const sudoPass = deps.getSudoPassword?.() || '';
             if (cmd && cmd.includes('sudo') && sudoPass) {
-                cmd = cmd.replace(/sudo\s+/g, `echo "${sudoPass}" | sudo -S `);
+                cmd = cmd.replace(/^\s*sudo\s+/, `echo "${sudoPass}" | sudo -S `);
             }
             const res = await api.invoke('agent-run-command', cmd, !!a.is_background);
             let out = '';

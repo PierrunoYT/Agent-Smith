@@ -31,6 +31,11 @@ const RULES = [
     { re: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, reason: 'fork bomb' },
     { re: /\b(?:curl|wget|iwr|invoke-webrequest)\b[^|\n]*\|\s*(?:sudo\s+)?(?:sh|bash|zsh|dash|powershell|pwsh|python\d?|node|ruby|perl)\b/i, reason: 'piping a remote download straight into an interpreter' },
     { re: /\b(?:iex|invoke-expression)\b[^\n]*(?:downloadstring|webclient|invoke-webrequest|iwr|curl|wget)/i, reason: 'IEX of a remote download (PowerShell)' },
+    // Two-step pull-and-exec: download an archive/manifest then build or install from it
+    { re: /\b(?:curl|wget|iwr|invoke-webrequest)\b[\s\S]{0,200}?(?:\.\/configure|make|cmake|ninja)\b/i, reason: 'download-then-build from the internet (pull-and-exec)' },
+    { re: /\b(?:curl|wget|iwr|invoke-webrequest)\b[\s\S]{0,200}?(?:pip\s+install|npm\s+install|yarn\s+install)\s+-(?:r|-requirement)?\s/i, reason: 'download-then-install from a remotely fetched manifest (pull-and-exec)' },
+    // Download then execute a freshly fetched script file (two-step, no pipe)
+    { re: /\b(?:curl|wget|iwr|invoke-webrequest)\b[\s\S]{0,200}?(?:-[-A-Za-z]*o\s|--output\s|--output=|-O\b|>)\s?\S*?[\s\S]{0,100}?(?:sh|bash|zsh|dash|python\d?|node|ruby|perl)\s/i, reason: 'downloading a script file then executing it (pull-and-exec)' },
     { re: /\b(?:shutdown|reboot|poweroff|halt|init\s+0|init\s+6)\b/i, reason: 'host power-state change' },
     { re: /\bsudo\b/i, reason: 'privilege escalation (sudo) is not permitted in autonomous mode' },
 ];

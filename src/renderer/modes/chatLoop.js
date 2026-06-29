@@ -4,13 +4,17 @@
 (function (global) {
     'use strict';
 
-    function withTimeout(promise, ms, label) {
+    function withTimeout(promise, ms, label, controller) {
         let timer;
+        const timeoutPromise = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+                if (controller) { try { controller.abort(); } catch (e) { /* ignore */ } }
+                reject(new Error(`${label} timed out after ${ms}ms`));
+            }, ms);
+        });
         return Promise.race([
             Promise.resolve(promise).finally(() => clearTimeout(timer)),
-            new Promise((_, reject) => {
-                timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-            })
+            timeoutPromise
         ]);
     }
 
@@ -54,7 +58,8 @@
             let result;
             try {
                 if (deps.executeTool) {
-                    result = await withTimeout(deps.executeTool(name, args, deps), toolTimeoutMs, `Tool ${name}`);
+                    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+                    result = await withTimeout(deps.executeTool(name, args, deps, { signal: controller?.signal }), toolTimeoutMs, `Tool ${name}`, controller);
                 } else {
                     result = 'Error: executeTool not provided';
                 }

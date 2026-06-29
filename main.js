@@ -767,7 +767,10 @@ const webServer = http.createServer((req, res) => {
     const authHeader = req.headers['authorization'];
     const cookies = parseCookies(req.headers.cookie);
     const parsedUrlForAuth = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const queryToken = parsedUrlForAuth.searchParams.get('token');
+    // Query-string token is only allowed for SSE EventSource connections (which
+    // cannot set Authorization headers); all other routes require cookie/header auth.
+    const isSseEndpoint = url === '/api/events';
+    const queryToken = isSseEndpoint ? parsedUrlForAuth.searchParams.get('token') : null;
     const token = authHeader ? authHeader.replace('Bearer ', '') : (cookies.auth_token || queryToken);
     const user = authManager.verifyToken(token);
     const isAuthenticated = !!user;

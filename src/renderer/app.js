@@ -1480,7 +1480,7 @@ async function renderAdminUserList() {
         const row = document.createElement('div');
         row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);';
         
-        const isSelf = currentUserDisplay.textContent.includes(user.username);
+        const isSelf = currentUserDisplay.textContent === `User: ${user.username}`;
         const info = document.createElement('div');
         const name = document.createElement('strong');
         name.style.color = 'var(--accent-color)';
