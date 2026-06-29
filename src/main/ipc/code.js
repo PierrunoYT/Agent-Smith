@@ -108,8 +108,14 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
             }),
             runBackgroundCommand: (command, cwd) => {
                 const jobId = nextJobId++;
-                const child = spawnShell(command, cwd);
-                const procInfo = { log: [], running: true, child };
+                let child;
+                try {
+                    child = spawnShell(command, cwd);
+                } catch (e) {
+                    bgProcesses.set(jobId, { log: [`[Process failed to start: ${e.message}]`], running: false, child: null, exitCode: null, error: e.message });
+                    return { error: `Process failed to start: ${e.message}`, stdout: '', jobId };
+                }
+                const procInfo = { log: [], running: true, child, exitCode: null };
                 bgProcesses.set(jobId, procInfo);
                 const append = (data) => {
                     procInfo.log.push(...data.toString().split('\n').filter(Boolean));
@@ -117,9 +123,15 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
                 };
                 child.stdout?.on('data', append);
                 child.stderr?.on('data', append);
+                child.on('error', (err) => {
+                    procInfo.log.push(`[Process failed to start: ${err.message}]`);
+                    procInfo.running = false;
+                    procInfo.error = err.message;
+                });
                 child.on('close', (code) => {
                     procInfo.log.push(`[exit ${code}]`);
                     procInfo.running = false;
+                    procInfo.exitCode = code;
                 });
                 return { stdout: `Background job ${jobId} started`, jobId };
             }
@@ -180,6 +192,10 @@ module.exports = function registerCodeIpc(ipcMain, deps) {
             requirePlanApproval: opts.requirePlanApproval,
             continueAfterApproval: opts.continueAfterApproval,
             grindMode: opts.grindMode !== false,
+            isolatedRun: opts.isolatedRun ?? resumeSession?.isolatedRun ?? false,
+            parallelMilestones: opts.parallelMilestones ?? resumeSession?.parallelMilestones ?? false,
+            milestoneWorktrees: opts.milestoneWorktrees ?? resumeSession?.milestoneWorktrees ?? false,
+            milestoneConcurrent: opts.milestoneConcurrent ?? resumeSession?.milestoneConcurrent ?? false,
             pluginToolSchemas,
             memory,
             pluginManager

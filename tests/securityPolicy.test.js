@@ -102,10 +102,10 @@ test('commandPolicy blocks more destructive patterns + normalizes whitespace', (
 test('channelPolicy: non-string is privileged; TOOL_CHANNELS gated; benign channels are not', () => {
     assert.equal(requiresToolPermission(123), true, 'non-string → treated as privileged');
     assert.equal(requiresToolPermission(undefined), true);
-    for (const ch of ['ledger-revert-all', 'preview-show', 'set-lms-url', 'spawn-shell', 'open-external-url']) {
+    for (const ch of ['ledger-revert-all', 'preview-show', 'set-lms-url', 'spawn-shell', 'open-external-url', 'mem-store', 'mem-clear', 'whatsapp-send', 'whatsapp-init']) {
         assert.equal(requiresToolPermission(ch), true, `${ch} must require tools`);
     }
-    for (const ch of ['mem-query', 'lmstudio-get-status', 'project-get-root']) {
+    for (const ch of ['mem-query', 'mem-count', 'lmstudio-get-status', 'project-get-root']) {
         assert.equal(requiresToolPermission(ch), false, `${ch} (read-only) should NOT require tools`);
     }
 });

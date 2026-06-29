@@ -36,7 +36,7 @@ test('git IPC forwards getRoot() and applies default commit message / log count'
     assert.deepEqual(gitIntegration.logOneline.calls[0], ['/ROOT', 10], 'default n=10');
 });
 
-test('ledger IPC falls back to state.currentPlanId', async () => {
+test('ledger IPC falls back to state.currentPlanId and rejects missing ids', async () => {
     const registerLedgerIpc = require('../src/main/ipc/ledger.js');
     const changeLedger = { diff: spy({ fileCount: 0 }), revertAll: spy({ success: true }) };
     const { ipcMain, h } = fakeIpc();
@@ -46,6 +46,11 @@ test('ledger IPC falls back to state.currentPlanId', async () => {
     assert.deepEqual(changeLedger.diff.calls[0], ['PID'], 'undefined planId → state.currentPlanId');
     await h('ledger-revert-all')({}, 'EXPLICIT');
     assert.deepEqual(changeLedger.revertAll.calls[0], ['EXPLICIT'], 'explicit planId wins');
+
+    const none = fakeIpc();
+    registerLedgerIpc(none.ipcMain, { changeLedger, state: { currentPlanId: null } });
+    assert.match((await none.h('ledger-diff')({}, undefined)).error, /No active plan/);
+    assert.match((await none.h('ledger-revert-all')({}, undefined)).error, /No active plan/);
 });
 
 test('edit IPC: no active plan → error without calling editEngine; with plan → applies + relPath', async () => {
@@ -67,6 +72,38 @@ test('edit IPC: no active plan → error without calling editEngine; with plan �
     assert.deepEqual(editEngine.apply.calls[0], ['P', 'a.js', 'x', 'y']);
     assert.equal(ok.relPath, 'a.js');
     assert.equal(invalidateRepoMap.calls.length, 1, 'repo map invalidated on success');
+});
+
+test('edit IPC patch/batch tolerate absent planStore', async () => {
+    const registerEditIpc = require('../src/main/ipc/edit.js');
+    const editEngine = {
+        applyPatch: spy({ success: true, path: '/ROOT/p.js' }),
+        applyBatch: spy({ results: [{ result: { success: true, path: '/ROOT/b.js' } }] })
+    };
+    const invalidateRepoMap = spy();
+    const { ipcMain, h } = fakeIpc();
+    registerEditIpc(ipcMain, {
+        editEngine, planStore: null, projectContext: { getRootOrNull: () => '/ROOT' },
+        relPathFromRoot: p => p.endsWith('p.js') ? 'p.js' : 'b.js', invalidateRepoMap, state: { currentPlanId: null }
+    });
+
+    const patch = await h('edit-apply-patch')({}, { planId: 'P', filepath: 'p.js', patch: 'x' });
+    assert.equal(patch.relPath, 'p.js');
+    const batch = await h('edit-apply-batch')({}, { planId: 'P', edits: [] });
+    assert.equal(batch.results[0].result.relPath, 'b.js');
+});
+
+test('actions IPC clear delegates to soft-clear action log', async () => {
+    const registerActionsIpc = require('../src/main/ipc/actions.js');
+    const actionLog = {
+        list: spy([]),
+        undo: spy({ ok: true }),
+        clear: spy({ ok: true, archived: 2 })
+    };
+    const { ipcMain, h } = fakeIpc();
+    registerActionsIpc(ipcMain, { actionLog });
+    assert.deepEqual(await h('actions-clear')({}), { ok: true, archived: 2 });
+    assert.equal(actionLog.clear.calls.length, 1);
 });
 
 test('project IPC: get-root uses getRootOrNull() then falls back to getRoot()', async () => {

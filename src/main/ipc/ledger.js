@@ -8,7 +8,17 @@
 module.exports = function registerLedgerIpc(ipcMain, deps) {
     const { changeLedger, state } = deps;
 
-    ipcMain.handle('ledger-diff', async (event, planId) => changeLedger.diff(planId || state.currentPlanId));
+    const resolvePlanId = (planId) => planId || state?.currentPlanId;
 
-    ipcMain.handle('ledger-revert-all', async (event, planId) => changeLedger.revertAll(planId || state.currentPlanId));
+    ipcMain.handle('ledger-diff', async (event, planId) => {
+        const pid = resolvePlanId(planId);
+        if (!pid) return { error: 'No active plan' };
+        return changeLedger.diff(pid);
+    });
+
+    ipcMain.handle('ledger-revert-all', async (event, planId) => {
+        const pid = resolvePlanId(planId);
+        if (!pid) return { error: 'No active plan' };
+        return changeLedger.revertAll(pid);
+    });
 };

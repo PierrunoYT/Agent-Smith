@@ -41,10 +41,14 @@ module.exports = function registerEditIpc(ipcMain, deps) {
         if (result.success) {
             invalidateRepoMap();
             result.relPath = relPathFromRoot(result.path);
-            const plan = await planStore.load(pid);
-            if (!plan.error) {
-                planStore.recordFileTouch(plan, result.relPath, 'edit');
-                await planStore.save(plan);
+            if (planStore) {
+                try {
+                    const plan = await planStore.load(pid);
+                    if (!plan.error) {
+                        planStore.recordFileTouch(plan, result.relPath, 'edit');
+                        await planStore.save(plan);
+                    }
+                } catch (e) { /* non-fatal */ }
             }
         }
         return result;
@@ -57,7 +61,9 @@ module.exports = function registerEditIpc(ipcMain, deps) {
         invalidateRepoMap();
         if (res.results) {
             let plan = null;
-            try { const p = await planStore.load(pid); if (!p.error) plan = p; } catch (e) { plan = null; }
+            if (planStore) {
+                try { const p = await planStore.load(pid); if (!p.error) plan = p; } catch (e) { plan = null; }
+            }
             for (const r of res.results) {
                 if (r.result?.success && r.result.path) {
                     r.result.relPath = relPathFromRoot(r.result.path);

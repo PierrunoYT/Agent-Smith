@@ -117,6 +117,9 @@ module.exports = function registerWhatsAppIpc(ipcMain, getMainWindow, app, pushE
             await whatsappClient.initialize();
             return { success: true };
         } catch (err) {
+            const client = whatsappClient;
+            whatsappClient = null;
+            try { await client.destroy(); } catch (e) { /* ignore */ }
             return { error: err.message };
         }
     });

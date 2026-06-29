@@ -48,3 +48,15 @@ test('sseHub removes client on close', () => {
     res.emit('close');
     assert.equal(hub.clientCount(), 0);
 });
+
+test('sseHub drops clients that apply backpressure', () => {
+    const hub = createSseHub();
+    const res = mockRes();
+    let ended = false;
+    res.write = (c) => { res.chunks.push(String(c)); return !String(c).startsWith('event: code-event'); };
+    res.end = () => { ended = true; };
+    hub.addClient(res);
+    hub.broadcast('code-event', { type: 'turn_start', turn: 1 });
+    assert.equal(hub.clientCount(), 0);
+    assert.equal(ended, true);
+});

@@ -38,3 +38,32 @@ test('agent-list-directory returns an array the renderer can .join()', async () 
     assert.match(rendered, /alpha\.txt/);
     assert.match(rendered, /\[DIR\]\s+sub/);
 });
+
+test('agent-delete-file logs directory deletes as audit-only', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-del-dir-'));
+    const target = path.join(dir, 'folder');
+    fs.mkdirSync(target);
+    fs.writeFileSync(path.join(target, 'child.txt'), 'lost');
+    projectContext.setRoot(dir);
+    const recorded = [];
+    const handlers = new Map();
+    registerAgentIpc({ handle: (name, fn) => handlers.set(name, fn) }, {
+        fs,
+        fsPromises,
+        path,
+        projectContext,
+        spawn: () => {},
+        exec: () => {},
+        state: { currentPlanId: null },
+        changeLedger: {},
+        invalidateRepoMap: () => {},
+        relPathFromRoot: p => path.relative(dir, p).replace(/\\/g, '/'),
+        actionLog: { MAX_UNDO_BYTES: 1024, record: e => recorded.push(e) }
+    });
+
+    const res = await handlers.get('agent-delete-file')({}, 'folder');
+    assert.equal(res.success, true);
+    assert.equal(fs.existsSync(target), false);
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].undo, null);
+});

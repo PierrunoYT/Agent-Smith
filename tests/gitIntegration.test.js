@@ -72,6 +72,28 @@ test('undoLast: single commit removes HEAD; second commit resets to the first', 
         'no commits remain after undoing the last one');
 });
 
+test('undoLast refuses commits not created through gitIntegration.commit', { skip: !GIT_OK }, async () => {
+    const d = repo();
+    fs.writeFileSync(path.join(d, 'user.txt'), 'user');
+    execFileSync('git', ['add', 'user.txt'], { cwd: d });
+    execFileSync('git', ['commit', '-m', 'user commit'], { cwd: d, stdio: 'ignore' });
+    const u = await git.undoLast(d);
+    assert.equal(u.ok, false);
+    assert.match(u.error, /not created by Agent Smith/i);
+    assert.equal(fs.existsSync(path.join(d, 'user.txt')), true);
+});
+
+test('undoLast refuses dirty worktrees', { skip: !GIT_OK }, async () => {
+    const d = repo();
+    fs.writeFileSync(path.join(d, 'f.txt'), 'one');
+    await git.commit(d, 'owned');
+    fs.writeFileSync(path.join(d, 'dirty.txt'), 'dirty');
+    const u = await git.undoLast(d);
+    assert.equal(u.ok, false);
+    assert.match(u.error, /uncommitted changes/i);
+    assert.equal(fs.existsSync(path.join(d, 'f.txt')), true);
+});
+
 test('init is idempotent on an existing repo', { skip: !GIT_OK }, async () => {
     const d = repo();
     const r = await git.init(d);

@@ -226,7 +226,6 @@ module.exports = function registerAgentIpc(ipcMain, deps) {
             // Capture content (small files) so a delete is undoable via the action log.
             let undo = null;
             if (stats.isDirectory()) {
-                undo = { op: 'delete', path: absPath, isDir: true };
                 await fsPromises.rm(absPath, { recursive: true, force: true });
             } else {
                 if (actionLog && stats.size <= actionLog.MAX_UNDO_BYTES) {

@@ -71,3 +71,19 @@ test('persists across instances', () => {
     createActionLog({ userDataPath: dir }).record({ type: 'shell', summary: 'persisted' });
     assert.equal(createActionLog({ userDataPath: dir }).list()[0].summary, 'persisted');
 });
+
+test('clear soft-archives actions and preserves undo data by id', () => {
+    const dir = tmp();
+    const f = path.join(dir, 'made.txt');
+    fs.writeFileSync(f, 'hi');
+    const log = createActionLog({ userDataPath: dir });
+    const { id } = log.record({ type: 'create_file', summary: 'created made', undo: { op: 'write', path: f, existed: false } });
+    const cleared = log.clear();
+    assert.equal(cleared.ok, true);
+    assert.equal(cleared.archived, 1);
+    assert.deepEqual(log.list(), []);
+    assert.equal(log.undo(id).ok, true);
+    assert.equal(fs.existsSync(f), false);
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, 'action-log.json'), 'utf8'));
+    assert.equal(raw.archives[0].entries[0].id, id);
+});

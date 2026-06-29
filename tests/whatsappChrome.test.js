@@ -36,7 +36,10 @@ test('resolveChromeExecutable falls back to system Chrome when puppeteer cache i
             '/usr/bin/google-chrome',
             '/usr/bin/chromium',
             '/usr/bin/chromium-browser',
-            '/snap/bin/chromium'
+            '/snap/bin/chromium',
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
         ];
         const found = candidates.find((p) => fs.existsSync(p)) || null;
         assert.equal(resolveChromeExecutable(), found);

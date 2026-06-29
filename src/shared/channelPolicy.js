@@ -11,7 +11,7 @@
 'use strict';
 
 // Any channel starting with one of these performs tool-level actions.
-const TOOL_PREFIXES = ['agent-', 'code-', 'git-', 'edit-', 'plugin-', 'ledger-', 'preview-', 'actions-'];
+const TOOL_PREFIXES = ['agent-', 'code-', 'git-', 'edit-', 'plugin-', 'ledger-', 'preview-', 'actions-', 'whatsapp-'];
 
 // Individually dangerous channels that don't share a tool prefix.
 const TOOL_CHANNELS = new Set([
@@ -19,7 +19,9 @@ const TOOL_CHANNELS = new Set([
     'set-lms-url',
     'open-external-url',
     'run-command',
-    'spawn-shell'
+    'spawn-shell',
+    'mem-store',
+    'mem-clear'
 ]);
 
 function requiresToolPermission(channel) {

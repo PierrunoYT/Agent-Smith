@@ -22,6 +22,38 @@ function isRepo(projectRoot) {
     return fs.existsSync(path.join(projectRoot, '.git'));
 }
 
+function gitDir(projectRoot) {
+    const dotGit = path.join(projectRoot, '.git');
+    try {
+        const st = fs.statSync(dotGit);
+        if (st.isDirectory()) return dotGit;
+        if (st.isFile()) {
+            const m = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)\s*$/i);
+            if (m) return path.resolve(projectRoot, m[1]);
+        }
+    } catch (e) { /* fall through */ }
+    return dotGit;
+}
+
+function ownedCommitsPath(projectRoot) {
+    return path.join(gitDir(projectRoot), 'agentsmith-owned-commits.json');
+}
+
+function readOwnedCommits(projectRoot) {
+    try {
+        const d = JSON.parse(fs.readFileSync(ownedCommitsPath(projectRoot), 'utf8'));
+        return Array.isArray(d.commits) ? d.commits : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function writeOwnedCommits(projectRoot, commits) {
+    try {
+        fs.writeFileSync(ownedCommitsPath(projectRoot), JSON.stringify({ commits }, null, 2), { mode: 0o600 });
+    } catch (e) { /* non-fatal */ }
+}
+
 async function init(projectRoot) {
     if (isRepo(projectRoot)) return { ok: true, already: true };
     return gitExec(projectRoot, ['init']);
@@ -41,18 +73,41 @@ async function commit(projectRoot, message) {
     if (!isRepo(projectRoot)) return { ok: false, error: 'not a git repo' };
     await gitExec(projectRoot, ['add', '-A']);
     // execFile passes argv directly — no shell, no quoting needed (and no injection).
-    return gitExec(projectRoot, ['commit', '-m', String(message || '').slice(0, 500), '--allow-empty']);
+    const res = await gitExec(projectRoot, ['commit', '-m', String(message || '').slice(0, 500), '--allow-empty']);
+    if (res.ok) {
+        const head = await gitExec(projectRoot, ['rev-parse', 'HEAD']);
+        if (head.ok && head.stdout) {
+            const commits = readOwnedCommits(projectRoot).filter(c => c !== head.stdout);
+            commits.push(head.stdout);
+            writeOwnedCommits(projectRoot, commits.slice(-100));
+        }
+    }
+    return res;
 }
 
 async function undoLast(projectRoot) {
     if (!isRepo(projectRoot)) return { ok: false, error: 'not a git repo' };
     const log = await gitExec(projectRoot, ['rev-parse', 'HEAD']);
     if (!log.ok) return log;
-    const parent = await gitExec(projectRoot, ['rev-parse', 'HEAD~1']);
-    if (!parent.ok) {
-        return gitExec(projectRoot, ['update-ref', '-d', 'HEAD']);
+    const head = log.stdout;
+    const owned = readOwnedCommits(projectRoot);
+    if (!owned.includes(head)) {
+        return { ok: false, error: 'Refusing to undo: HEAD was not created by Agent Smith.' };
     }
-    return gitExec(projectRoot, ['reset', '--hard', 'HEAD~1']);
+    const dirty = await gitExec(projectRoot, ['status', '--porcelain']);
+    if (!dirty.ok) return dirty;
+    if (dirty.stdout) {
+        return { ok: false, error: 'Refusing to undo: working tree has uncommitted changes.' };
+    }
+    const parent = await gitExec(projectRoot, ['rev-parse', 'HEAD~1']);
+    let res;
+    if (!parent.ok) {
+        res = await gitExec(projectRoot, ['update-ref', '-d', 'HEAD']);
+    } else {
+        res = await gitExec(projectRoot, ['reset', '--hard', 'HEAD~1']);
+    }
+    if (res.ok) writeOwnedCommits(projectRoot, owned.filter(c => c !== head));
+    return res;
 }
 
 async function logOneline(projectRoot, n = 10) {

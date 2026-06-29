@@ -43,7 +43,11 @@ function createSseHub() {
         const frame = `event: ${channel}\ndata: ${data}\n\n`;
         for (const res of clients) {
             try {
-                res.write(frame);
+                const ok = res.write(frame);
+                if (ok === false) {
+                    clients.delete(res);
+                    try { res.end?.(); } catch (e) { /* ignore */ }
+                }
             } catch (e) {
                 clients.delete(res);
             }

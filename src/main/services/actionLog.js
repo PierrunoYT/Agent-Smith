@@ -24,8 +24,14 @@ function createActionLog(deps = {}) {
     let data = load();
 
     function load() {
-        try { const d = JSON.parse(fs.readFileSync(file, 'utf8')); if (d && Array.isArray(d.entries)) return d; } catch {}
-        return { entries: [], seq: 0 };
+        try {
+            const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (d && Array.isArray(d.entries)) {
+                if (!Array.isArray(d.archives)) d.archives = [];
+                return d;
+            }
+        } catch {}
+        return { entries: [], seq: 0, archives: [] };
     }
     function save() { try { fs.writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 }); } catch {} }
     const now = () => Date.now();
@@ -57,8 +63,18 @@ function createActionLog(deps = {}) {
         }));
     }
 
+    function findEntry(id) {
+        const active = data.entries.find(x => x.id === id);
+        if (active) return active;
+        for (const archive of data.archives || []) {
+            const archived = (archive.entries || []).find(x => x.id === id);
+            if (archived) return archived;
+        }
+        return null;
+    }
+
     function undo(id) {
-        const e = data.entries.find(x => x.id === id);
+        const e = findEntry(id);
         if (!e) return { error: 'No action with that id.' };
         if (e.undone) return { error: 'That action was already undone.' };
         if (!e._undo) return { error: 'That action cannot be undone (audit-only).' };
@@ -81,7 +97,15 @@ function createActionLog(deps = {}) {
         } catch (err) { return { error: err.message }; }
     }
 
-    function clear() { data = { entries: [], seq: data.seq }; save(); return { ok: true }; }
+    function clear() {
+        const count = data.entries.length;
+        if (count) {
+            data.archives = (data.archives || []).concat([{ clearedAt: now(), entries: data.entries }]).slice(-10);
+        }
+        data = { entries: [], seq: data.seq, archives: data.archives || [] };
+        save();
+        return { ok: true, archived: count };
+    }
 
     // Helper for callers wiring file mutations: decide whether content is small enough to keep for undo.
     function captureWriteUndo(absPath, existedBefore, prevContent) {
