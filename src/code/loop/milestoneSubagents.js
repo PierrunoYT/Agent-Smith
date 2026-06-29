@@ -118,6 +118,7 @@ async function runOneMilestone(opts, milestone) {
             files = sync.synced;
             if (sync.errors.length) {
                 emit({ type: 'subagent_sync_warning', milestoneId: milestone.id, errors: sync.errors });
+                return { ok: false, files, error: `Worktree sync failed for ${sync.errors.length} file(s): ${sync.errors.map(e => e.path).join(', ')}` };
             }
         }
 

@@ -458,6 +458,15 @@ async function runCodeTask(opts) {
         });
     } finally {
         if (session.isolatedRun && session.worktreePath && !session.milestoneWorktrees) {
+            // Sync touched files from the worktree back to the parent checkout before
+            // deleting the worktree — otherwise generated files are lost permanently.
+            try {
+                const { syncWorktreeFiles } = require('../../main/services/worktreeManager.js');
+                const touched = session.filesTouched || [];
+                if (touched.length) {
+                    syncWorktreeFiles(parentProjectRoot, session.worktreePath, touched);
+                }
+            } catch (e) { /* non-fatal */ }
             try { cleanupWorktree(parentProjectRoot, sessionId); } catch (e) { /* non-fatal */ }
             try { projectContext.setRoot(parentProjectRoot); } catch (e) { /* non-fatal */ }
         }

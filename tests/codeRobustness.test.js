@@ -59,40 +59,47 @@ test('CodeSession.toJSON persists isolation fields for worktree cleanup on resum
 test('isolated run restores project root and cleans worktree', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-run-'));
     const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-ud-'));
-    execSync('git init', { cwd: root, stdio: 'ignore' });
-    fs.writeFileSync(path.join(root, 'README.md'), 'init\n');
-    execSync('git add README.md', { cwd: root, stdio: 'ignore' });
-    execSync('git -c user.name=Test -c user.email=test@example.com commit -m init', { cwd: root, stdio: 'ignore' });
-    projectContext.setRoot(root);
-    const ledger = new ChangeLedger(path.join(root, '.ledger'));
-    const execDeps = {
-        projectContext,
-        editEngine: new EditEngine(ledger, projectContext),
-        changeLedger: ledger,
-        grepProject: async () => ({ hits: [] }),
-        globFiles: async () => ({ files: [] }),
-        relPathFromRoot: p => path.relative(root, p).replace(/\\/g, '/'),
-        runForegroundCommand: async () => ({ stdout: '', stderr: '', error: null }),
-        runBackgroundCommand: async () => ({ stdout: 'bg', jobId: 1 })
-    };
+    const prevRoot = projectContext.getRootOrNull();
+    try {
+        execSync('git init', { cwd: root, stdio: 'ignore' });
+        fs.writeFileSync(path.join(root, 'README.md'), 'init\n');
+        execSync('git add README.md', { cwd: root, stdio: 'ignore' });
+        execSync('git -c user.name=Test -c user.email=test@example.com commit -m init', { cwd: root, stdio: 'ignore' });
+        projectContext.setRoot(root);
+        const ledger = new ChangeLedger(path.join(root, '.ledger'));
+        const execDeps = {
+            projectContext,
+            editEngine: new EditEngine(ledger, projectContext),
+            changeLedger: ledger,
+            grepProject: async () => ({ hits: [] }),
+            globFiles: async () => ({ files: [] }),
+            relPathFromRoot: p => path.relative(root, p).replace(/\\/g, '/'),
+            runForegroundCommand: async () => ({ stdout: '', stderr: '', error: null }),
+            runBackgroundCommand: async () => ({ stdout: 'bg', jobId: 1 })
+        };
 
-    const session = await runCodeTask({
-        sessionId: 'iso_cleanup_test',
-        prompt: 'Add a small utility script',
-        projectRoot: root,
-        model: 'qwen',
-        numCtx: 8192,
-        apiBaseUrl: 'http://x',
-        userDataPath,
-        projectContext,
-        execDeps,
-        emit: () => {},
-        streamCompletion: async () => ({ message: { role: 'assistant', content: 'done' }, finishReason: 'stop' }),
-        isolatedRun: true,
-        maxTurns: 2
-    });
+        const session = await runCodeTask({
+            sessionId: 'iso_cleanup_test',
+            prompt: 'Add a small utility script',
+            projectRoot: root,
+            model: 'qwen',
+            numCtx: 8192,
+            apiBaseUrl: 'http://x',
+            userDataPath,
+            projectContext,
+            execDeps,
+            emit: () => {},
+            streamCompletion: async () => ({ message: { role: 'assistant', content: 'done' }, finishReason: 'stop' }),
+            isolatedRun: true,
+            maxTurns: 2
+        });
 
-    assert.equal(session.isolatedRun, true);
-    assert.equal(path.resolve(projectContext.getRoot()), path.resolve(root));
-    assert.equal(fs.existsSync(worktreePath(root, 'iso_cleanup_test')), false);
+        assert.equal(session.isolatedRun, true);
+        assert.equal(path.resolve(projectContext.getRoot()), path.resolve(root));
+        assert.equal(fs.existsSync(worktreePath(root, 'iso_cleanup_test')), false);
+    } finally {
+        try { projectContext.setRoot(prevRoot); } catch (e) { /* ignore */ }
+        try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+        try { fs.rmSync(userDataPath, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    }
 });
