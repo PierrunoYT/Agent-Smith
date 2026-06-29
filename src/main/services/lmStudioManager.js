@@ -183,14 +183,37 @@ function createLmStudioManager(deps = {}) {
                 if (!/not loaded|not found/i.test(msg)) throw e;
             }
         }
-        await execFile(lmsPath, [
-            'load', model,
-            '--context-length', String(selected),
-            '--parallel', '1',
-            '--gpu', 'max',
-            '--identifier', model,
-            '-y'
-        ]);
+        // Load the replacement, and on failure attempt to restore the previously
+        // loaded instance so the user is not left with no working model. Previously
+        // an error here propagated after the unload, leaving nothing loaded.
+        try {
+            await execFile(lmsPath, [
+                'load', model,
+                '--context-length', String(selected),
+                '--parallel', '1',
+                '--gpu', 'max',
+                '--identifier', model,
+                '-y'
+            ]);
+        } catch (e) {
+            if (before.loadedContext != null) {
+                try {
+                    await execFile(lmsPath, [
+                        'load', model,
+                        '--context-length', String(before.loadedContext),
+                        '--parallel', String(before.parallel || 1),
+                        '--gpu', 'max',
+                        '--identifier', model,
+                        '-y'
+                    ]);
+                } catch (e2) { /* best-effort rollback; report the original failure */ }
+            }
+            return {
+                ...before,
+                requestedContext,
+                error: `LM Studio load failed: ${e?.stderr || e?.message || 'unknown error'}${before.loadedContext != null ? ' (restored previous context)' : ''}`
+            };
+        }
 
         const after = await getStatus({ apiBaseUrl, model });
         if (!after.managed || after.loadedContext !== selected) {

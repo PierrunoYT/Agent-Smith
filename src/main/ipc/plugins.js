@@ -24,8 +24,8 @@ module.exports = function registerPluginsIpc(ipcMain, deps) {
     ipcMain.handle('plugin-set-enabled', async (event, { id, enabled, grantedCaps }) =>
         pluginManager.setEnabled(id, enabled, grantedCaps));
     ipcMain.handle('plugin-uninstall', async (event, { id }) => pluginManager.uninstall(id));
-    ipcMain.handle('plugin-install', async (event, { url }) => {
-        const res = await pluginInstaller.install(url);
+    ipcMain.handle('plugin-install', async (event, { url, allowMutable }) => {
+        const res = await pluginInstaller.install(url, { allowMutable: !!allowMutable });
         if (res.success) pluginManager.discover();
         return res;
     });

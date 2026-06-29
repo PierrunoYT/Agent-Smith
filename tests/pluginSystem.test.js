@@ -231,14 +231,23 @@ test('manager._buildHost wires fs (sandboxed), net (guarded) and memory per gran
 
 // ---- installer: pure logic + guards -----------------------------------------
 
-test('installer: resolveGithubTarball maps repo + branch', () => {
+test('installer: resolveGithubTarball maps repo + branch and flags immutability', () => {
     const inst = new PluginInstaller('/tmp/plugins', { hasGit: false });
-    assert.strictEqual(
+    assert.deepStrictEqual(
         inst.resolveGithubTarball('https://github.com/owner/repo'),
-        'https://codeload.github.com/owner/repo/tar.gz/refs/heads/main');
-    assert.strictEqual(
+        { url: 'https://codeload.github.com/owner/repo/tar.gz/refs/heads/main', ref: 'main', immutable: false });
+    assert.deepStrictEqual(
         inst.resolveGithubTarball('https://github.com/owner/repo/tree/dev'),
-        'https://codeload.github.com/owner/repo/tar.gz/refs/heads/dev');
+        { url: 'https://codeload.github.com/owner/repo/tar.gz/refs/heads/dev', ref: 'dev', immutable: false });
+    // commit SHA is immutable
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    assert.deepStrictEqual(
+        inst.resolveGithubTarball(`https://github.com/owner/repo/tree/${sha}`),
+        { url: `https://codeload.github.com/owner/repo/tar.gz/${sha}`, ref: sha, immutable: true });
+    // tag is immutable
+    assert.deepStrictEqual(
+        inst.resolveGithubTarball('https://github.com/owner/repo/tree/v1.0.0/tags/v1.0.0'),
+        { url: 'https://codeload.github.com/owner/repo/tar.gz/refs/tags/v1.0.0', ref: 'v1.0.0', immutable: true });
     assert.strictEqual(inst.resolveGithubTarball('https://example.com/x'), null);
 });
 
@@ -279,9 +288,10 @@ test('installer: end-to-end with injected runners installs into plugins dir', as
             fs.cpSync(EXAMPLE, dest, { recursive: true });
         },
     });
-    const r = await inst.install('https://github.com/example/hello.git');
+    const r = await inst.install('https://github.com/example/hello.git', { allowMutable: true });
     assert.strictEqual(r.success, true);
     assert.strictEqual(r.id, 'hello');
+    assert.strictEqual(r.immutable, false, 'branch HEAD install recorded as mutable');
     assert.ok(fs.existsSync(path.join(pluginsDir, 'hello', 'plugin.json')), 'installed on disk');
 });
 
