@@ -18,6 +18,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const Module = require('module');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'b6-'));
 
@@ -176,13 +177,14 @@ test('memory clearMemory returns an error object when persistence fails', () => 
     // Load memory.js with a stubbed electron app path so it does not touch real userData.
     const memPath = require.resolve('../src/main/services/memory.js');
     delete require.cache[memPath];
-    const origApp = require('electron');
     // Provide a fake app that points userData at a FILE so saveJSON fails.
     const dir = tmp();
     const blocker = path.join(dir, 'blocker');
     fs.writeFileSync(blocker, 'x');
-    require.cache[require.resolve('electron')] = {
-        exports: { app: { getPath: () => blocker } }
+    const origLoad = Module._load;
+    Module._load = function(request, parent, isMain) {
+        if (request === 'electron') return { app: { getPath: () => blocker } };
+        return origLoad.apply(this, arguments);
     };
     try {
         const mem = require(memPath);
@@ -190,7 +192,7 @@ test('memory clearMemory returns an error object when persistence fails', () => 
         assert.equal(r.success, false);
         assert.ok(r.error, 'persistence failure surfaced');
     } finally {
-        require.cache[require.resolve('electron')] = { exports: origApp };
+        Module._load = origLoad;
         delete require.cache[memPath];
     }
 });
