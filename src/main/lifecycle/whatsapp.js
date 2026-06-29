@@ -144,3 +144,7 @@ module.exports = function registerWhatsAppIpc(ipcMain, getMainWindow, app, pushE
 };
 
 module.exports.resolveChromeExecutable = resolveChromeExecutable;
+// Exported so tests can derive the expected fallback path from the same cross-platform
+// candidate list the resolver scans, instead of duplicating a (Linux-only) copy that
+// drifts and fails on Windows/macOS machines with Chrome installed.
+module.exports.SYSTEM_CHROME_CANDIDATES = SYSTEM_CHROME_CANDIDATES;

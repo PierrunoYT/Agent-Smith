@@ -115,15 +115,18 @@ test('manager: beforeToolCall hook fires and can veto', async () => {
     const pluginsDir = path.join(ud, 'plugins');
     writePlugin(pluginsDir, 'guard', {
         'plugin.json': JSON.stringify({ id: 'guard', name: 'Guard', version: '1.0.0', capabilities: [] }),
-        'hooks/veto.js': 'module.exports={event:"beforeToolCall",async run(p){return p.toolName==="danger"?{block:true,reason:"nope"}:undefined;}};',
+        // Key on the REAL fired payload field. The Agent loop and Code Mode executor fire
+        // beforeToolCall with { tool, name, args } — never `toolName` — so a hook keyed on
+        // `toolName` would never see the value in production (the batch-10 example-hook bug).
+        'hooks/veto.js': 'module.exports={event:"beforeToolCall",async run(p){return (p.tool||p.name)==="danger"?{block:true,reason:"nope"}:undefined;}};',
     });
     const pm = new PluginManager(ud, {});
     pm.discover();
     pm.setEnabled('guard', true, []);
 
-    const ok = await pm.fireHook('beforeToolCall', { toolName: 'write_file' });
+    const ok = await pm.fireHook('beforeToolCall', { tool: 'write_file', name: 'write_file', args: {} });
     assert.strictEqual(ok.blocked, false);
-    const blocked = await pm.fireHook('beforeToolCall', { toolName: 'danger' });
+    const blocked = await pm.fireHook('beforeToolCall', { tool: 'danger', name: 'danger', args: {} });
     assert.strictEqual(blocked.blocked, true);
     assert.strictEqual(blocked.reason, 'nope');
 });

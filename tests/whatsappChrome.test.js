@@ -29,16 +29,11 @@ test('resolveChromeExecutable falls back to system Chrome when puppeteer cache i
     delete require.cache[require.resolve('../src/main/lifecycle/whatsapp.js')];
 
     try {
-        const { resolveChromeExecutable } = require('../src/main/lifecycle/whatsapp.js');
-        // Same system candidates the resolver scans (sans the env vars above).
-        const candidates = [
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/google-chrome',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser',
-            '/snap/bin/chromium'
-        ];
-        const found = candidates.find((p) => fs.existsSync(p)) || null;
+        const { resolveChromeExecutable, SYSTEM_CHROME_CANDIDATES } = require('../src/main/lifecycle/whatsapp.js');
+        // Derive the expected fallback from the SAME list the resolver scans, so this stays
+        // correct on every platform (the env-var candidates were neutralized above, and the
+        // list is rebuilt without them because the module was required after the deletes).
+        const found = SYSTEM_CHROME_CANDIDATES.find((p) => fs.existsSync(p)) || null;
         assert.equal(resolveChromeExecutable(), found);
     } finally {
         Module._load = realLoad;
