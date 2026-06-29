@@ -121,6 +121,31 @@ test('executor write_file + ledger snapshot', async () => {
     assert.ok(diff.fileCount >= 1);
 });
 
+test('executor rejects write_file with missing content before ledger changes', async () => {
+    const dir = path.join(os.tmpdir(), `code-write-missing-${Date.now()}`);
+    fs.mkdirSync(dir, { recursive: true });
+    projectContext.setRoot(dir);
+    const ledger = new ChangeLedger(path.join(dir, '.ledger'));
+    const editEngine = new EditEngine(ledger, projectContext);
+    const sessionId = 'missing_content_session';
+    const deps = {
+        sessionId,
+        projectContext,
+        editEngine,
+        changeLedger: ledger,
+        grepProject: async () => ({ hits: [] }),
+        globFiles: async () => ({ files: [] }),
+        relPathFromRoot: (p) => path.relative(dir, p).replace(/\\/g, '/'),
+        runForegroundCommand: async () => ({ stdout: 'ok' }),
+        runBackgroundCommand: async () => ({ jobId: 1 })
+    };
+    const r = await executeTool('write_file', { path: 'bad.txt' }, deps);
+    assert.match(r.error, /string content/i);
+    assert.equal(fs.existsSync(path.join(dir, 'bad.txt')), false);
+    const diff = await ledger.diff(sessionId);
+    assert.equal(diff.fileCount, 0);
+});
+
 test('executor append_file grows an existing file', async () => {
     const dir = path.join(os.tmpdir(), `code-append-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });

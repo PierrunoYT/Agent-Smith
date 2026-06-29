@@ -14,9 +14,7 @@ const { checkCompletion } = require('../governor/completionGate.js');
 
 function resolveSubagentMode(session) {
     if (!session.parallelMilestones) return null;
-    if (session.milestoneWorktrees) {
-        return session.milestoneConcurrent ? 'worktree-concurrent' : 'worktree-sequential';
-    }
+    if (session.milestoneWorktrees) return 'worktree-sequential';
     return 'shared-sequential';
 }
 
@@ -113,31 +111,39 @@ async function runOneMilestone(opts, milestone) {
             pluginManager,
             projectRoot: parentProjectRoot
         });
+
+        let files = childSession.filesTouched || [];
+        if (useWorktree && worktreePath && files.length) {
+            const sync = syncWorktreeFiles(parentProjectRoot, worktreePath, files);
+            files = sync.synced;
+            if (sync.errors.length) {
+                emit({ type: 'subagent_sync_warning', milestoneId: milestone.id, errors: sync.errors });
+            }
+        }
+
+        emit({
+            type: 'subagent_done',
+            milestoneId: milestone.id,
+            files,
+            worktreePath,
+            mode: useWorktree ? 'worktree' : 'shared'
+        });
+
+        return { ok: true, files };
+    } catch (e) {
+        emit({
+            type: 'subagent_error',
+            milestoneId: milestone.id,
+            error: e.message,
+            mode: useWorktree ? 'worktree' : 'shared'
+        });
+        return { ok: false, files: [], error: e.message };
     } finally {
         if (useWorktree && worktreePath) {
             projectContext.setRoot(prevRoot);
+            cleanupMilestoneWorktree(parentProjectRoot, session.id, milestone.id);
         }
     }
-
-    let files = childSession.filesTouched || [];
-    if (useWorktree && worktreePath && files.length) {
-        const sync = syncWorktreeFiles(parentProjectRoot, worktreePath, files);
-        files = sync.synced;
-        if (sync.errors.length) {
-            emit({ type: 'subagent_sync_warning', milestoneId: milestone.id, errors: sync.errors });
-        }
-        cleanupMilestoneWorktree(parentProjectRoot, session.id, milestone.id);
-    }
-
-    emit({
-        type: 'subagent_done',
-        milestoneId: milestone.id,
-        files,
-        worktreePath,
-        mode: useWorktree ? 'worktree' : 'shared'
-    });
-
-    return { ok: true, files };
 }
 
 async function runMilestoneSubagentOrchestrator(opts) {

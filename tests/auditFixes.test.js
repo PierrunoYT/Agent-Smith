@@ -47,3 +47,14 @@ test('CodeRunTrace records the verification gate as a verify step', () => {
     assert.ok(stages.includes('verify.blocked'));
     assert.ok(stages.includes('verify.gate'));
 });
+
+test('CodeRunTrace query maps GhostTrace step fields', () => {
+    const t = new CodeRunTrace('run_test');
+    t.toolExecute('write_file', false, 'missing content');
+    const q = t.query({ failuresOnly: true, tool: 'write_file' });
+    assert.equal(q.summary.failures, 1);
+    assert.equal(q.steps.length, 1);
+    assert.equal(q.steps[0].status, 'error');
+    assert.equal(q.steps[0].tool, 'write_file');
+    assert.equal(q.steps[0].ms, 0);
+});

@@ -16,6 +16,7 @@ For a new web app use milestones like: index.html structure, style.css, script.j
 Do NOT write or patch files. Do NOT declare the task done. Your only exit is submit_code_plan.`;
 
 const MAX_PLAN_TURNS = 8;
+const PLANNING_TOOL_ALLOWLIST = new Set(['read_file', 'grep', 'glob', 'list_project', 'show_preview']);
 
 async function runPlanningPhase(ctx) {
     const {
@@ -94,8 +95,13 @@ async function runPlanningPhase(ctx) {
                 break;
             }
 
-            emit({ type: 'tool_start', turn: 0, name: call.name, args: call.args, phase: 'planning' });
-            const toolResult = await executeTool(call.name, call.args, execDeps);
+            let toolResult;
+            if (!PLANNING_TOOL_ALLOWLIST.has(call.name)) {
+                toolResult = { error: `Tool ${call.name} is not allowed during planning. Use read-only tools or submit_code_plan.` };
+            } else {
+                emit({ type: 'tool_start', turn: 0, name: call.name, args: call.args, phase: 'planning' });
+                toolResult = await executeTool(call.name, call.args, execDeps);
+            }
             emit({
                 type: 'tool_result',
                 turn: 0,

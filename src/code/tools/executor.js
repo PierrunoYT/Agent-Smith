@@ -215,6 +215,9 @@ async function executeTool(name, args, deps) {
             if (!a.path || !String(a.path).trim()) {
                 return { error: 'write_file requires a "path" (e.g. {"path":"src/app.js","content":"..."}). You sent no path — retry with both path and the full file content.' };
             }
+            if (typeof a.content !== 'string') {
+                return { error: 'write_file requires string content.' };
+            }
             const chunkErr = checkWriteChunkSize(a.content);
             if (chunkErr) return chunkErr;
             if (String(a.content || '').length > MAX_WRITE_CHARS) {

@@ -6,9 +6,18 @@
  */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execSync } = require('child_process');
 const { fitBudget, estimateMessages } = require('../src/code/context/budget.js');
 const { EarlyStopDetector } = require('../src/code/governor/earlyStop.js');
 const { CodeSession } = require('../src/code/session/state.js');
+const { runCodeTask } = require('../src/code/loop/runCodeTask.js');
+const projectContext = require('../src/main/services/projectContext.js');
+const ChangeLedger = require('../src/main/services/changeLedger.js');
+const EditEngine = require('../src/main/services/editEngine.js');
+const { worktreePath } = require('../src/main/services/worktreeManager.js');
 
 test('fitBudget evicts accumulated system nudges to stay under target', () => {
     const msgs = [{ role: 'system', content: 'BASE PROMPT' }, { role: 'user', content: 'the goal' }];
@@ -45,4 +54,45 @@ test('CodeSession.toJSON persists isolation fields for worktree cleanup on resum
     assert.equal(json.isolatedRun, true);
     assert.equal(json.worktreePath, '/tmp/wt-abc');
     assert.equal(json.parentProjectRoot, '/p');
+});
+
+test('isolated run restores project root and cleans worktree', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-run-'));
+    const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-ud-'));
+    execSync('git init', { cwd: root, stdio: 'ignore' });
+    fs.writeFileSync(path.join(root, 'README.md'), 'init\n');
+    execSync('git add README.md', { cwd: root, stdio: 'ignore' });
+    execSync('git -c user.name=Test -c user.email=test@example.com commit -m init', { cwd: root, stdio: 'ignore' });
+    projectContext.setRoot(root);
+    const ledger = new ChangeLedger(path.join(root, '.ledger'));
+    const execDeps = {
+        projectContext,
+        editEngine: new EditEngine(ledger, projectContext),
+        changeLedger: ledger,
+        grepProject: async () => ({ hits: [] }),
+        globFiles: async () => ({ files: [] }),
+        relPathFromRoot: p => path.relative(root, p).replace(/\\/g, '/'),
+        runForegroundCommand: async () => ({ stdout: '', stderr: '', error: null }),
+        runBackgroundCommand: async () => ({ stdout: 'bg', jobId: 1 })
+    };
+
+    const session = await runCodeTask({
+        sessionId: 'iso_cleanup_test',
+        prompt: 'Add a small utility script',
+        projectRoot: root,
+        model: 'qwen',
+        numCtx: 8192,
+        apiBaseUrl: 'http://x',
+        userDataPath,
+        projectContext,
+        execDeps,
+        emit: () => {},
+        streamCompletion: async () => ({ message: { role: 'assistant', content: 'done' }, finishReason: 'stop' }),
+        isolatedRun: true,
+        maxTurns: 2
+    });
+
+    assert.equal(session.isolatedRun, true);
+    assert.equal(path.resolve(projectContext.getRoot()), path.resolve(root));
+    assert.equal(fs.existsSync(worktreePath(root, 'iso_cleanup_test')), false);
 });

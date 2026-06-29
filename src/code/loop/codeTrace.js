@@ -77,7 +77,16 @@ class CodeRunTrace {
         const toolFilter = opts.tool ? String(opts.tool).toLowerCase() : null;
         const lastN = Math.min(50, Math.max(1, parseInt(opts.lastN, 10) || 20));
 
-        let steps = (this.trace.steps || []).slice();
+        const normalize = (s) => ({
+            stage: s.stage,
+            status: s.status || s.outcome,
+            code: s.code,
+            tool: s.tool || s.related_resource,
+            detail: String(s.detail || '').slice(0, 500),
+            ms: s.ms ?? s.duration_ms
+        });
+
+        let steps = (this.trace.steps || []).map(normalize);
         if (failuresOnly) {
             steps = steps.filter(s => s.status === 'error' || /fail|block|error/i.test(s.code || ''));
         }
@@ -89,21 +98,11 @@ class CodeRunTrace {
         const summary = {
             total: this.trace.steps?.length || 0,
             returned: steps.length,
-            failures: (this.trace.steps || []).filter(s => s.status === 'error').length,
+            failures: (this.trace.steps || []).map(normalize).filter(s => s.status === 'error').length,
             outcome: this.trace.outcome
         };
 
-        return {
-            steps: steps.map(s => ({
-                stage: s.stage,
-                status: s.status,
-                code: s.code,
-                tool: s.tool,
-                detail: String(s.detail || '').slice(0, 500),
-                ms: s.ms
-            })),
-            summary
-        };
+        return { steps, summary };
     }
 }
 
