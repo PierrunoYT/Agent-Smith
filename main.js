@@ -737,6 +737,25 @@ function getLocalIP() {
     return '127.0.0.1';
 }
 
+function parseCookies(header) {
+    const out = {};
+    String(header || '').split(';').forEach(part => {
+        const idx = part.indexOf('=');
+        if (idx <= 0) return;
+        const key = part.slice(0, idx).trim();
+        const value = part.slice(idx + 1).trim();
+        try { out[key] = decodeURIComponent(value); } catch { out[key] = value; }
+    });
+    return out;
+}
+
+function authCookie(token, req) {
+    const attrs = ['HttpOnly', 'SameSite=Strict', 'Path=/'];
+    if (req.socket && req.socket.encrypted) attrs.push('Secure');
+    if (!token) attrs.push('Max-Age=0');
+    return `auth_token=${token ? encodeURIComponent(token) : ''}; ${attrs.join('; ')}`;
+}
+
 const webServer = http.createServer((req, res) => {
     // CORS Headers for Mobile Web Mode
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -746,9 +765,10 @@ const webServer = http.createServer((req, res) => {
 
     const url = req.url.split('?')[0];
     const authHeader = req.headers['authorization'];
+    const cookies = parseCookies(req.headers.cookie);
     const parsedUrlForAuth = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const queryToken = parsedUrlForAuth.searchParams.get('token');
-    const token = authHeader ? authHeader.replace('Bearer ', '') : queryToken;
+    const token = authHeader ? authHeader.replace('Bearer ', '') : (cookies.auth_token || queryToken);
     const user = authManager.verifyToken(token);
     const isAuthenticated = !!user;
     const canUseApp = isAuthenticated && user.permissions.canUseApp;
@@ -863,8 +883,15 @@ const webServer = http.createServer((req, res) => {
         req.on('data', chunk => body += chunk.toString());
         req.on('end', async () => {
             try {
-                const { channel, args } = JSON.parse(body);
+                const parsedBody = JSON.parse(body);
+                const channel = parsedBody.channel;
+                let args = Array.isArray(parsedBody.args) ? parsedBody.args : [];
                 
+                if (channel === 'auth-check' && !args[0]) args = [token];
+                if (channel === 'auth-get-users' && !args[0]) args = [token];
+                if (channel === 'auth-logout' && !args[0]) args = [token];
+                if (channel === 'auth-update-user' && args[0] && !args[0].token) args[0].token = token;
+
                 // Special handling for auth actions via proxy
                 if (channel === 'auth-login' || channel === 'auth-register' || channel === 'auth-has-users') {
                     // These are allowed even if not authenticated if they come with x-auth-action header
@@ -900,8 +927,16 @@ const webServer = http.createServer((req, res) => {
                 const handler = webHandlers.get(channel);
                 if (handler) {
                     const val = await handler({ sender: { send: () => {} } }, ...args);
-                    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-                    res.end(JSON.stringify(val));
+                    const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+                    let payload = val;
+                    if (channel === 'auth-login' && val?.success && val.token) {
+                        headers['Set-Cookie'] = authCookie(val.token, req);
+                        payload = { ...val };
+                        delete payload.token;
+                    }
+                    if (channel === 'auth-logout') headers['Set-Cookie'] = authCookie('', req);
+                    res.writeHead(200, headers);
+                    res.end(JSON.stringify(payload));
                 } else {
                     res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
                     res.end(JSON.stringify({ error: 'No handler for ' + channel }));

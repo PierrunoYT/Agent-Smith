@@ -10,7 +10,7 @@ const known = agentTools.AGENT_SYS_TOOLS.map(t => t.function.name);
 // These are verbatim shapes qwen3-coder:30b emitted via Ollama that the old
 // JSON-only fallback dropped — the model narrated the action, nothing ran.
 test('parses Qwen XML run_shell_command call', () => {
-    const text = "I'll find the kernel. <function=run_shell_command> <parameter=command> uname -r </parameter> </function>";
+    const text = "I'll find the kernel. ```tool-call\n<function=run_shell_command> <parameter=command> uname -r </parameter> </function>\n```";
     const calls = extractTextToolCalls(text, known);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].name, 'run_shell_command');
@@ -26,14 +26,14 @@ test('parses Qwen XML grep_project call', () => {
 });
 
 test('coerces XML param types (int + bool)', () => {
-    const text = '<function=run_shell_command><parameter=command>sleep 8</parameter><parameter=is_background>true</parameter></function>';
+    const text = '```tool-call\n<function=run_shell_command><parameter=command>sleep 8</parameter><parameter=is_background>true</parameter></function>\n```';
     const calls = extractTextToolCalls(text, known);
     assert.equal(calls.length, 1);
     assert.strictEqual(calls[0].arguments.is_background, true);
 });
 
 test('multiline XML body is preserved verbatim', () => {
-    const text = '<function=write_file>\n<parameter=filepath>a.txt</parameter>\n<parameter=content>line1\nline2</parameter>\n</function>';
+    const text = '```tool-call\n<function=write_file>\n<parameter=filepath>a.txt</parameter>\n<parameter=content>line1\nline2</parameter>\n</function>\n```';
     const calls = extractTextToolCalls(text, known);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].arguments.filepath, 'a.txt');
@@ -49,7 +49,7 @@ test('still parses JSON-style fallback (no regression)', () => {
 });
 
 test('mixed JSON + XML in one message both recovered, deduped', () => {
-    const text = '{"name":"read_file","parameters":{"filepath":"x"}} then <function=run_shell_command><parameter=command>ls</parameter></function> and a dup <function=read_file><parameter=filepath>x</parameter></function>';
+    const text = '{"name":"read_file","parameters":{"filepath":"x"}} then ```tool-call\n<function=run_shell_command><parameter=command>ls</parameter></function>\n``` and a dup <function=read_file><parameter=filepath>x</parameter></function>';
     const calls = extractTextToolCalls(text, known);
     const names = calls.map(c => c.name).sort();
     assert.deepEqual(names, ['read_file', 'run_shell_command']);
@@ -64,7 +64,7 @@ test('unknown tool names in XML are ignored', () => {
 // gemma-4-26b emitted this verbatim: a raw-JSON-in-prose call whose `command` value
 // contained unescaped inner quotes, so strict JSON.parse failed and the call was dropped.
 test('recovers a tool call whose string value has unescaped inner quotes', () => {
-    const text = 'Sure. {"name": "run_shell_command", "parameters": {"command": "echo "42.2" > km.txt"}}';
+    const text = 'Sure. ```tool-call\n{"name": "run_shell_command", "parameters": {"command": "echo "42.2" > km.txt"}}\n```';
     const calls = extractTextToolCalls(text, known);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].name, 'run_shell_command');
@@ -77,7 +77,7 @@ test('repair does not fire for malformed JSON with an unknown tool name', () => 
 });
 
 test('well-formed JSON tool calls are unaffected by the repair path', () => {
-    const text = '{"name":"write_file","parameters":{"filepath":"a.txt","content":"hi"}}';
+    const text = '```tool-call\n{"name":"write_file","parameters":{"filepath":"a.txt","content":"hi"}}\n```';
     const calls = extractTextToolCalls(text, known);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].arguments.content, 'hi');

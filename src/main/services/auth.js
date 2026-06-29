@@ -49,6 +49,10 @@ class AuthManager {
     }
 
     async register(username, password) {
+        username = String(username || '').trim();
+        if (!/^[A-Za-z0-9_.-]{1,64}$/.test(username)) {
+            throw new Error('Username must be 1-64 letters, numbers, dots, dashes, or underscores');
+        }
         if (this.users[username]) {
             throw new Error('User already exists');
         }

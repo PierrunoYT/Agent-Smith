@@ -256,6 +256,21 @@ TOOL PROTOCOL: To use a tool, emit a real function/tool call via the native tool
         return { name, arguments: args };
     }
 
+    const MUTATING_TEXT_RECOVERY_TOOLS = new Set(['run_shell_command', 'write_file', 'delete_file', 'send_input', 'stop_process', 'undo_action', 'save_new_user_fact_only', 'memory_purge']);
+
+    function trustedToolCallSpans(text) {
+        const spans = [];
+        const re = /```(?:tool-call|tool|function-call)\s*\n([\s\S]*?)```/gi;
+        let m;
+        while ((m = re.exec(text))) spans.push({ start: m.index + m[0].indexOf(m[1]), end: m.index + m[0].indexOf(m[1]) + m[1].length });
+        return spans;
+    }
+
+    function canRecoverTextTool(name, index, spans) {
+        if (!MUTATING_TEXT_RECOVERY_TOOLS.has(name)) return true;
+        return spans.some(s => index >= s.start && index <= s.end);
+    }
+
     /** Coerce an XML <parameter> text value to the obvious JS type (bool/int/string). */
     function coerceXmlValue(v) {
         const t = (v == null ? '' : String(v)).trim();
@@ -273,12 +288,12 @@ TOOL PROTOCOL: To use a tool, emit a real function/tool call via the native tool
      * the call is silently dropped: the model "says" it ran a command but nothing
      * executes. Appends recovered calls to `calls`, deduping via `seen`.
      */
-    function extractXmlToolCalls(text, names, seen, calls) {
+    function extractXmlToolCalls(text, names, seen, calls, spans) {
         const fnRe = /<function\s*=\s*([a-zA-Z_][\w]*)\s*>([\s\S]*?)<\/function\s*>/g;
         let m;
         while ((m = fnRe.exec(text))) {
             const name = m[1];
-            if (!names.has(name)) continue;
+            if (!names.has(name) || !canRecoverTextTool(name, m.index, spans)) continue;
             const args = {};
             const pRe = /<parameter\s*=\s*([a-zA-Z_][\w]*)\s*>([\s\S]*?)<\/parameter\s*>/g;
             let p;
@@ -300,6 +315,7 @@ TOOL PROTOCOL: To use a tool, emit a real function/tool call via the native tool
     function extractTextToolCalls(text, knownNames) {
         if (!text || typeof text !== 'string') return [];
         const names = new Set(knownNames || AGENT_SYS_TOOLS.map(t => t.function.name));
+        const spans = trustedToolCallSpans(text);
         const calls = [];
         const seen = new Set();
         for (let i = 0; i < text.length; i++) {
@@ -307,7 +323,7 @@ TOOL PROTOCOL: To use a tool, emit a real function/tool call via the native tool
             const parsed = parseBalancedObject(text, i);
             if (!parsed) continue;
             const o = parsed.value;
-            if (o && typeof o === 'object' && typeof o.name === 'string' && names.has(o.name)) {
+            if (o && typeof o === 'object' && typeof o.name === 'string' && names.has(o.name) && canRecoverTextTool(o.name, i, spans)) {
                 const args = (o.parameters && typeof o.parameters === 'object') ? o.parameters
                     : (o.arguments && typeof o.arguments === 'object') ? o.arguments : {};
                 const sig = o.name + '|' + JSON.stringify(args);
@@ -316,14 +332,14 @@ TOOL PROTOCOL: To use a tool, emit a real function/tool call via the native tool
             } else if (parsed.parseError && /"name"\s*:/.test(parsed.raw)) {
                 // Malformed JSON that still looks like a tool call — try a tolerant repair.
                 const fixed = repairToolCallJson(parsed.raw, names);
-                if (fixed) {
+                if (fixed && canRecoverTextTool(fixed.name, i, spans)) {
                     const sig = fixed.name + '|' + JSON.stringify(fixed.arguments);
                     if (!seen.has(sig)) { seen.add(sig); calls.push({ name: fixed.name, arguments: fixed.arguments, raw: parsed.raw }); }
                     i = parsed.end;
                 }
             }
         }
-        if (/<function\s*=/.test(text)) extractXmlToolCalls(text, names, seen, calls);
+        if (/<function\s*=/.test(text)) extractXmlToolCalls(text, names, seen, calls, spans);
         return calls;
     }
 

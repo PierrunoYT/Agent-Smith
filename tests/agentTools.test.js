@@ -58,10 +58,12 @@ test('Agent Mode advertises web read tools', () => {
     }
 });
 
-test('extractTextToolCalls recovers ANY tool emitted as raw JSON text (not just web_search)', () => {
+test('extractTextToolCalls recovers mutating JSON tools only from explicit tool fences', () => {
     const known = ['write_file', 'web_search', 'read_file'];
-    // The failure mode this guards: the model emits a tool as prose JSON instead of a native call.
-    const text = 'Sure, I will write the file.\n{"name": "write_file", "parameters": {"filepath": "a.txt", "content": "Trinity", "append": false}}';
+    const prose = 'Example only: {"name": "write_file", "parameters": {"filepath": "a.txt", "content": "Trinity", "append": false}}';
+    assert.equal(extractTextToolCalls(prose, known).length, 0);
+
+    const text = 'Sure, I will write the file.\n```tool-call\n{"name": "write_file", "parameters": {"filepath": "a.txt", "content": "Trinity", "append": false}}\n```';
     const calls = extractTextToolCalls(text, known);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].name, 'write_file');
@@ -81,6 +83,17 @@ test('extractTextToolCalls handles nested braces and "arguments" alias, ignores 
 
 test('extractTextToolCalls returns nothing for plain prose', () => {
     assert.equal(extractTextToolCalls('Just a normal answer with no tools.', ['web_search']).length, 0);
+});
+
+test('extractTextToolCalls gates mutating XML recovery but allows read-only JSON recovery', () => {
+    assert.equal(extractTextToolCalls('<function=run_shell_command><parameter=command>rm x</parameter></function>', ['run_shell_command']).length, 0);
+    const fenced = '```tool\n<function=run_shell_command><parameter=command>echo ok</parameter></function>\n```';
+    const calls = extractTextToolCalls(fenced, ['run_shell_command']);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].arguments.command, 'echo ok');
+
+    const readOnly = extractTextToolCalls('{"name":"fetch_url","arguments":{"url":"https://example.com"}}', ['fetch_url']);
+    assert.equal(readOnly.length, 1);
 });
 
 test('Agent Mode never exposes a password-returning credential tool', () => {

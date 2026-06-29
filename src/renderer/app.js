@@ -1,5 +1,6 @@
 // --- Polyfill for Non-Electron Environments (Mobile/Web) ---
 const isWebMode = window.location.protocol.startsWith('http');
+let authToken = isWebMode ? '' : (localStorage.getItem('auth_token') || '');
 if (isWebMode) document.body.classList.add('web-mode');
 else document.body.classList.add('electron-app');
 
@@ -44,15 +45,14 @@ function createWebApiPolyfill() {
     let eventSourceToken = null;
 
     function ensureEventSource() {
-        const token = localStorage.getItem('auth_token') || '';
+        const token = authToken || '';
         if (eventSource && eventSourceToken === token) return;
         if (eventSource) {
             try { eventSource.close(); } catch (e) { /* ignore */ }
             eventSource = null;
         }
         eventSourceToken = token;
-        const qs = token ? `?token=${encodeURIComponent(token)}` : '';
-        eventSource = new EventSource(`/api/events${qs}`);
+        eventSource = new EventSource('/api/events');
         WEB_RECEIVE_CHANNELS.forEach((channel) => {
             eventSource.addEventListener(channel, (ev) => {
                 let payload = ev.data;
@@ -62,8 +62,7 @@ function createWebApiPolyfill() {
             });
         });
         eventSource.onerror = () => {
-            // EventSource auto-reconnects; token may have changed after login
-            const current = localStorage.getItem('auth_token') || '';
+            const current = authToken || '';
             if (current !== eventSourceToken) ensureEventSource();
         };
     }
@@ -71,7 +70,7 @@ function createWebApiPolyfill() {
     return {
         invoke: async (channel, ...args) => {
             try {
-                const token = localStorage.getItem('auth_token');
+                const token = authToken || '';
                 const headers = { 'Content-Type': 'application/json' };
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -124,21 +123,74 @@ if (!window.api) {
     window.api = createWebApiPolyfill();
 }
 
-if (!window.markedParse) {
-    window.markedParse = (text) => {
-        if (typeof marked !== 'undefined' && marked.parse) {
-            return marked.parse(text);
-        }
-        return text; // Fallback to raw text if marked is not available
-    };
+function sanitizeRendererUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^(https?:|mailto:|tel:|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(raw)) return raw;
+    if (/^(\/|#|\.\/|\.\.\/)/.test(raw)) return raw;
+    return '';
 }
+
+function sanitizeRendererHtml(html) {
+    const template = document.createElement('template');
+    template.innerHTML = String(html || '');
+    const allowedTags = new Set(['A', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DD', 'DEL', 'DETAILS', 'DIV', 'DL', 'DT', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'INPUT', 'KBD', 'LABEL', 'LI', 'OL', 'P', 'PRE', 'S', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUMMARY', 'SUP', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
+    const globalAttrs = new Set(['aria-label', 'aria-expanded', 'aria-hidden', 'class', 'colspan', 'disabled', 'hidden', 'open', 'role', 'rowspan', 'title', 'type']);
+    const walk = (node) => {
+        for (const child of [...node.children]) {
+            if (!allowedTags.has(child.tagName)) {
+                if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE' || child.tagName === 'IFRAME' || child.tagName === 'OBJECT' || child.tagName === 'EMBED') {
+                    child.remove();
+                } else {
+                    walk(child);
+                    child.replaceWith(...child.childNodes);
+                }
+                continue;
+            }
+            for (const attr of [...child.attributes]) {
+                const name = attr.name.toLowerCase();
+                const value = attr.value;
+                const allowed = globalAttrs.has(name) || name.startsWith('data-');
+                if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+                    child.removeAttribute(attr.name);
+                } else if ((name === 'href' || name === 'src') && sanitizeRendererUrl(value)) {
+                    child.setAttribute(name, sanitizeRendererUrl(value));
+                    if (name === 'href') child.setAttribute('rel', 'noreferrer noopener');
+                } else if (name === 'value' && child.tagName === 'INPUT') {
+                    child.setAttribute(name, value);
+                } else if (!allowed && name !== 'rel') {
+                    child.removeAttribute(attr.name);
+                }
+            }
+            if (child.tagName === 'A') {
+                const href = child.getAttribute('href');
+                if (!href) child.removeAttribute('href');
+            }
+            if (child.tagName === 'IMG') {
+                const src = child.getAttribute('src');
+                if (!src) child.remove();
+            }
+            walk(child);
+        }
+    };
+    walk(template.content);
+    return template.innerHTML;
+}
+
+const rawMarkedParse = window.markedParse || ((text) => {
+    if (typeof marked !== 'undefined' && marked.parse) return marked.parse(text);
+    const div = document.createElement('div');
+    div.textContent = String(text == null ? '' : text);
+    return div.innerHTML;
+});
+window.markedParse = (text) => sanitizeRendererHtml(rawMarkedParse(text));
 
 if (isWebMode) {
     const originalFetch = window.fetch;
     window.fetch = async (input, init = {}) => {
         let urlStr = typeof input === 'string' ? input : input.url;
         
-        const token = localStorage.getItem('auth_token');
+        const token = authToken || '';
         if (token) {
             init.headers = { ...init.headers, 'Authorization': `Bearer ${token}` };
         }
@@ -756,9 +808,10 @@ function snapshotCurrentMode() {
     if (!messagesContainer) return;
     // Save the CURRENT mode's full rendered view (messages + tool/activity cards) so it
     // can be restored verbatim on switch/relaunch. Ephemeral "running" pulses are stripped.
-    modeSnapshots[currentMode] = window.XKHistoryPersistence
+    const html = window.XKHistoryPersistence
         ? window.XKHistoryPersistence.sanitizeCodeTimelineHtml(messagesContainer.innerHTML)
         : (messagesContainer.innerHTML || '');
+    modeSnapshots[currentMode] = sanitizeRendererHtml(html);
 }
 let codeTimelinePersistTimer = null;
 function scheduleCodeTimelinePersist() {
@@ -802,7 +855,7 @@ function maybeSwitchModeChat() {
     chatHistory = res.chatHistory;
     if (window.XKSharedTimeline && window.XKSharedTimeline.reset) window.XKSharedTimeline.reset();
     if (modeSnapshots[currentMode]) {
-        messagesContainer.innerHTML = modeSnapshots[currentMode]; // restore full view incl. tool cards
+        messagesContainer.innerHTML = sanitizeRendererHtml(modeSnapshots[currentMode]); // restore full view incl. tool cards
     } else {
         messagesContainer.innerHTML = '';
         renderHistory();
@@ -1113,7 +1166,12 @@ function renderAttachments() {
     attachedFiles.forEach((file, index) => {
         const tag = document.createElement('div');
         tag.className = 'attachment-tag';
-        tag.innerHTML = `${file.isImage ? '🖼️' : '📎'} ${file.fileName} <span class="remove-attach" data-index="${index}">×</span>`;
+        tag.append(document.createTextNode(`${file.isImage ? '🖼️' : '📎'} ${file.fileName} `));
+        const remove = document.createElement('span');
+        remove.className = 'remove-attach';
+        remove.dataset.index = String(index);
+        remove.textContent = '×';
+        tag.appendChild(remove);
         attachmentsBar.appendChild(tag);
     });
     document.querySelectorAll('.remove-attach').forEach(btn => {
@@ -1227,10 +1285,8 @@ if (importBtn) {
 }
 
 // --- Init & Connection ---
-let authToken = localStorage.getItem('auth_token');
-
 async function checkAuth() {
-    if (!authToken) {
+    if (!authToken && !isWebMode) {
         showLogin();
         return;
     }
@@ -1242,8 +1298,8 @@ async function checkAuth() {
         if (window.api.reconnectEvents) window.api.reconnectEvents();
         hideLogin(res.user);
     } else {
-        localStorage.removeItem('auth_token');
-        authToken = null;
+        if (!isWebMode) localStorage.removeItem('auth_token');
+        authToken = '';
         showLogin();
     }
 }
@@ -1326,8 +1382,8 @@ if (loginBtn) {
         try {
             const res = await window.api.invoke('auth-login', { username, password });
             if (res && res.success) {
-                authToken = res.token;
-                localStorage.setItem('auth_token', authToken);
+                authToken = res.token || '';
+                if (!isWebMode) localStorage.setItem('auth_token', authToken);
                 if (window.api.reconnectEvents) window.api.reconnectEvents();
                 checkAuth();
                 return;
@@ -1386,9 +1442,9 @@ if (registerSubmitBtn) {
 
 if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
-        if (authToken) await window.api.invoke('auth-logout', authToken);
-        localStorage.removeItem('auth_token');
-        authToken = null;
+        await window.api.invoke('auth-logout', authToken);
+        if (!isWebMode) localStorage.removeItem('auth_token');
+        authToken = '';
         location.reload();
     });
 }
@@ -1411,7 +1467,11 @@ async function renderAdminUserList() {
     adminUserList.innerHTML = '<p style="color:var(--text-color);">Loading users...</p>';
     const res = await window.api.invoke('auth-get-users', authToken);
     if (!res.success) {
-        adminUserList.innerHTML = `<p style="color:#ff4444;">Error: ${res.error}</p>`;
+        adminUserList.innerHTML = '';
+        const error = document.createElement('p');
+        error.style.color = '#ff4444';
+        error.textContent = `Error: ${res.error}`;
+        adminUserList.appendChild(error);
         return;
     }
 
@@ -1421,23 +1481,31 @@ async function renderAdminUserList() {
         row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);';
         
         const isSelf = currentUserDisplay.textContent.includes(user.username);
-        
-        row.innerHTML = `
-            <div>
-                <strong style="color: var(--accent-color);">${user.username}</strong>
-                <span style="font-size: 0.7rem; color: #8b949e; margin-left: 5px;">[${user.role.toUpperCase()}]</span>
-            </div>
-            <div style="display: flex; gap: 15px;">
-                <label style="display:flex; align-items:center; gap:5px; font-size:0.8rem; color:var(--text-color); cursor:${isSelf ? 'not-allowed' : 'pointer'};">
-                    <input type="checkbox" class="perm-toggle" data-user="${user.username}" data-perm="canUseApp" ${user.permissions.canUseApp ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
-                    App Access
-                </label>
-                <label style="display:flex; align-items:center; gap:5px; font-size:0.8rem; color:var(--text-color); cursor:${isSelf ? 'not-allowed' : 'pointer'};">
-                    <input type="checkbox" class="perm-toggle" data-user="${user.username}" data-perm="canUseTools" ${user.permissions.canUseTools ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
-                    Tool Access
-                </label>
-            </div>
-        `;
+        const info = document.createElement('div');
+        const name = document.createElement('strong');
+        name.style.color = 'var(--accent-color)';
+        name.textContent = user.username;
+        const role = document.createElement('span');
+        role.style.cssText = 'font-size: 0.7rem; color: #8b949e; margin-left: 5px;';
+        role.textContent = `[${String(user.role || '').toUpperCase()}]`;
+        info.append(name, role);
+
+        const perms = document.createElement('div');
+        perms.style.cssText = 'display: flex; gap: 15px;';
+        [['canUseApp', 'App Access'], ['canUseTools', 'Tool Access']].forEach(([perm, labelText]) => {
+            const label = document.createElement('label');
+            label.style.cssText = `display:flex; align-items:center; gap:5px; font-size:0.8rem; color:var(--text-color); cursor:${isSelf ? 'not-allowed' : 'pointer'};`;
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.className = 'perm-toggle';
+            input.dataset.user = user.username;
+            input.dataset.perm = perm;
+            input.checked = !!user.permissions?.[perm];
+            input.disabled = isSelf;
+            label.append(input, document.createTextNode(` ${labelText}`));
+            perms.appendChild(label);
+        });
+        row.append(info, perms);
         adminUserList.appendChild(row);
     });
 
@@ -1541,7 +1609,7 @@ async function init() {
 
         messagesContainer.innerHTML = '';
         if (modeSnapshots[currentMode]) {
-            messagesContainer.innerHTML = modeSnapshots[currentMode]; // restore messages + tool cards
+            messagesContainer.innerHTML = sanitizeRendererHtml(modeSnapshots[currentMode]); // restore messages + tool cards
         } else {
             renderHistory();
         }
@@ -1565,7 +1633,10 @@ async function fetchModels(retries = 3) {
     const ensureOption = (id) => {
         if (!id) return;
         if (![...modelSelect.options].some(o => o.value === id)) {
-            modelSelect.insertAdjacentHTML('afterbegin', `<option value="${id}">${id}</option>`);
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = id;
+            modelSelect.prepend(opt);
         }
         modelSelect.value = id;
     };
@@ -1578,9 +1649,17 @@ async function fetchModels(retries = 3) {
         const data = await res.json();
         const models = data.data || data;
         if (Array.isArray(models) && models.length > 0) {
-            modelSelect.innerHTML = models.map(m => `<option value="${m.id || m}">${m.id || m}</option>`).join('');
+            modelSelect.textContent = '';
+            models.forEach(m => {
+                const id = String(m?.id || m || '');
+                if (!id) return;
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                modelSelect.appendChild(opt);
+            });
             // Restore the prior selection if it's still available.
-            if (remembered && models.some(m => (m.id || m) === remembered)) modelSelect.value = remembered;
+            if (remembered && models.some(m => String(m?.id || m || '') === remembered)) modelSelect.value = remembered;
             if (window.XKRuntimeProfileUI) {
                 await window.XKRuntimeProfileUI.applyForCurrentModel();
             }
@@ -1781,7 +1860,8 @@ function addMessage(role, text) {
     }
     const div = document.createElement('div');
     div.className = `message ${role === 'user' ? 'user-message' : 'bot-message'}`;
-    div.innerHTML = role === 'user' ? text : window.markedParse(text);
+    if (role === 'user') div.textContent = text;
+    else div.innerHTML = window.markedParse(text);
     messagesContainer.appendChild(div);
     scrollMessagesToLatest(role === 'user');
     updateEmptyState();
@@ -2877,29 +2957,36 @@ if (emptyStateEl) {
 checkAuth();
 
 
-// Intercept download links to append auth token and prevent UI crash
+async function triggerAuthenticatedDownload(href) {
+    let url = href;
+    if (!isWebMode && href.startsWith('/')) {
+        const hostInfo = await window.api.invoke('get-host-url');
+        if (!hostInfo?.url) throw new Error('Host URL unavailable');
+        url = hostInfo.url + href;
+    }
+    const headers = {};
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    const res = await fetch(url, { headers, credentials: 'same-origin' });
+    if (!res.ok) throw new Error(`Download failed (${res.status})`);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = /filename="?([^";]+)"?/i.exec(disposition);
+    if (match) a.download = match[1];
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+}
+
 document.addEventListener('click', (e) => {
     const target = e.target.closest('a');
-    if (target && target.getAttribute('href')?.startsWith('/download_remote')) {
+    const href = target?.getAttribute('href') || '';
+    if (href.startsWith('/download_remote')) {
         e.preventDefault();
-        const token = localStorage.getItem('auth_token');
-        let url = target.getAttribute('href');
-        if (token) {
-            url += url.includes('?') ? `&token=${token}` : `?token=${token}`;
-        }
-        
-        // If we are in Electron, use the host to open it safely in the default browser or trigger download
-        if (!isWebMode) {
-            window.api.invoke('get-host-url').then(hostInfo => {
-                if (hostInfo && hostInfo.url) {
-                    const fullUrl = hostInfo.url + url;
-                    window.api.invoke('open-external-url', fullUrl);
-                }
-            });
-        } else {
-            // In web mode, just navigate (it's safe in a real browser as it triggers a download)
-            window.location.href = url;
-        }
+        triggerAuthenticatedDownload(href).catch(err => showToast(`Download failed: ${err.message}`));
     }
 });
 

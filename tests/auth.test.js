@@ -82,3 +82,11 @@ test('login surfaces the real reasons (bad password vs unknown user)', async () 
     await assert.rejects(() => auth.login('alice', 'wrong'), /invalid username or password/i);
     await assert.rejects(() => auth.login('nobody', 'pw'), /invalid username or password/i);
 });
+
+test('registration rejects usernames that could inject admin markup', async () => {
+    const auth = new AuthManager(tmp());
+    await assert.rejects(() => auth.register('<img src=x onerror=alert(1)>', 'pw'), /username must/i);
+    await assert.rejects(() => auth.register('bad"name', 'pw'), /username must/i);
+    await auth.register('safe.name-1', 'pw');
+    assert.ok(auth.users['safe.name-1']);
+});
