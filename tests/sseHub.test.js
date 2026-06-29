@@ -49,7 +49,7 @@ test('sseHub removes client on close', () => {
     assert.equal(hub.clientCount(), 0);
 });
 
-test('sseHub drops clients that apply backpressure', () => {
+test('sseHub keeps clients that apply backpressure and waits for drain', () => {
     const hub = createSseHub();
     const res = mockRes();
     let ended = false;
@@ -57,6 +57,10 @@ test('sseHub drops clients that apply backpressure', () => {
     res.end = () => { ended = true; };
     hub.addClient(res);
     hub.broadcast('code-event', { type: 'turn_start', turn: 1 });
-    assert.equal(hub.clientCount(), 0);
-    assert.equal(ended, true);
+    // Client should remain connected (backpressure != broken connection)
+    assert.equal(hub.clientCount(), 1);
+    assert.equal(ended, false);
+    // Simulate drain — client should still be connected
+    res.emit('drain');
+    assert.equal(hub.clientCount(), 1);
 });

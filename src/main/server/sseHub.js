@@ -45,8 +45,12 @@ function createSseHub() {
             try {
                 const ok = res.write(frame);
                 if (ok === false) {
-                    clients.delete(res);
-                    try { res.end?.(); } catch (e) { /* ignore */ }
+                    // Backpressure: wait for drain instead of disconnecting the client.
+                    // Track in-flight state so we don't queue multiple drains for one client.
+                    if (!res._draining) {
+                        res._draining = true;
+                        res.once('drain', () => { res._draining = false; });
+                    }
                 }
             } catch (e) {
                 clients.delete(res);

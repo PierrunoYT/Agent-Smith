@@ -67,6 +67,10 @@ class CodeSession {
             isolatedRun: session.isolatedRun || false,
             worktreePath: session.worktreePath || null,
             parentProjectRoot: session.parentProjectRoot || null,
+            // milestone concurrency flags — so resumed runs preserve parallel/worktree mode
+            parallelMilestones: session.parallelMilestones || false,
+            milestoneWorktrees: session.milestoneWorktrees || false,
+            milestoneConcurrent: session.milestoneConcurrent || false,
             updatedAt: Date.now()
         };
     }

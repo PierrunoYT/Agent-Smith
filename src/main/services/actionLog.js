@@ -28,6 +28,7 @@ function createActionLog(deps = {}) {
             const d = JSON.parse(fs.readFileSync(file, 'utf8'));
             if (d && Array.isArray(d.entries)) {
                 if (!Array.isArray(d.archives)) d.archives = [];
+                if (typeof d.seq !== 'number' || !Number.isFinite(d.seq)) d.seq = d.entries.length;
                 return d;
             }
         } catch {}
