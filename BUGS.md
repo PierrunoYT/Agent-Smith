@@ -1572,7 +1572,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **FIXED in `fix-batch-12` (`84e8913`) — MEDIUM — beforeToolCall veto test asserts against a payload the app never fires (false confidence).** The `manager: beforeToolCall hook fires and can veto` test wrote a hook keyed on `p.toolName` and fired `pm.fireHook('beforeToolCall', { toolName: ... })`, but the renderer Agent loop and Code Mode executor fire `{ tool, name, args }` — never `toolName`. The test passed while modeling a hook that would never block in production (the same root cause as the batch-10 example-hook bug), so it could not catch that a plugin keyed on the documented field can't read the tool name. Fixed by keying the test hook on `p.tool || p.name` and firing the real `{ tool, name, args }` payload. Related code: `tests/pluginSystem.test.js:113-129`, `src/code/tools/executor.js:111-114`, `src/renderer/modes/chatLoop.js:25-28`.
 
 ### `tests/postEditChecks.test.js`
 
@@ -1686,7 +1686,7 @@ Use this section to scan the codebase batch by batch. For each file, add finding
 
 **Bugs / notes:**
 
-- TBD
+- **FIXED in `fix-batch-12` (`84e8913`) — MEDIUM — Chrome-fallback test is platform-incomplete and fails deterministically off Linux.** The `resolveChromeExecutable falls back to system Chrome` test derived its expected value from a Linux-only candidate list (`/usr/bin/*`, `/snap/*`), but `resolveChromeExecutable` also scans macOS (`/Applications/...`) and Windows (`C:\\Program Files\\...`) Chrome paths. On a Windows/macOS host with Chrome installed, the resolver returns the real path while the test expects `null`, so the test fails (reproduced on Windows). Fixed by exporting the resolver's `SYSTEM_CHROME_CANDIDATES` and deriving the test's expected fallback from that same list, so it can't be platform-incomplete or drift. Related code: `tests/whatsappChrome.test.js:31-42`, `src/main/lifecycle/whatsapp.js:15-42`, `src/main/lifecycle/whatsapp.js:146-147`.
 
 ### `tests/whatsappOptional.test.js`
 
