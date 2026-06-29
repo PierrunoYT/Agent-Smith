@@ -67,7 +67,7 @@ test('pluginHookBypass — beforeToolCall block contract', async () => {
     const r = await pm.fireHook('beforeToolCall', { tool: 'patch', name: 'patch', args: {} });
     assert.equal(r.blocked, true, 'hook reads payload.tool from the fired { tool, name, args } shape');
     const allowed = await pm.fireHook('beforeToolCall', { tool: 'read_file', name: 'read_file', args: {} });
-    assert.notEqual(allowed.blocked, true, 'non-matching tool name is not blocked');
+    assert.equal(allowed.blocked, false, 'non-matching tool name is not blocked');
 });
 
 test('grindInjection — build task cannot skip gate with empty files', async () => {
