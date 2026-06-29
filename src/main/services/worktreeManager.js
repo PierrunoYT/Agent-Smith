@@ -17,7 +17,7 @@ function worktreeBase(projectRoot) {
 // truncated id alone could collide and createRunWorktree returned { reused:true }
 // for an existing path without checking branch/session ownership.
 function shortHash(s) {
-    return crypto.createHash('sha1').update(String(s)).digest('hex').slice(0, 8);
+    return crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 8);
 }
 
 function branchName(sessionId) {
