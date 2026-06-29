@@ -77,7 +77,7 @@ function runToolSandboxed(opts) {
         child.on('exit', (code) => { if (!done) finish(`Error: sandbox exited (code ${code}) before returning a result`); });
 
         try {
-            child.send({ type: 'invoke', toolFile, args, grantedCaps, projectRoot });
+            child.send({ type: 'invoke', pluginDir, toolFile, args, grantedCaps, projectRoot });
         } catch (e) {
             finish(`Error: could not start sandboxed tool: ${e.message}`);
         }

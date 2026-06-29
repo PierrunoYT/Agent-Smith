@@ -27,10 +27,19 @@ function createActionLog(deps = {}) {
         try { const d = JSON.parse(fs.readFileSync(file, 'utf8')); if (d && Array.isArray(d.entries)) return d; } catch {}
         return { entries: [], seq: 0 };
     }
-    function save() { try { fs.writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 }); } catch {} }
+    // save() returns true on success, false on persistence failure. Callers that
+    // care about durability (record/undo/clear) surface the failure so the trust
+    // layer does not silently degrade to in-memory-only when the userData dir is
+    // non-writable, full, or otherwise failing.
+    function save() {
+        try { fs.writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 }); return true; }
+        catch (e) { return false; }
+    }
     const now = () => Date.now();
 
-    /** record({ type, summary, detail?, undo? }) — undo: {op:'write'|'delete'|'custom', ...} */
+    /** record({ type, summary, detail?, undo? }) — undo: {op:'write'|'delete'|'custom', ...}
+     *  Returns { id } on success or { id, warning } when the entry was recorded
+     *  in memory but could not be persisted (the audit/undo trail is volatile). */
     function record(entry) {
         const id = 'a' + (++data.seq).toString(36);
         const e = {
@@ -44,8 +53,8 @@ function createActionLog(deps = {}) {
         if (entry.undo) e._undo = entry.undo;
         data.entries.push(e);
         if (data.entries.length > MAX) data.entries = data.entries.slice(-MAX);
-        save();
-        return { id };
+        const persisted = save();
+        return persisted ? { id } : { id, warning: 'action recorded in memory only — audit log could not be persisted (userData dir not writable or full). Undo may be unavailable after restart.' };
     }
 
     /** Public listing — no undo internals. */
@@ -76,12 +85,17 @@ function createActionLog(deps = {}) {
             } else {
                 return { error: 'This action type cannot be undone.' };
             }
-            e.undone = true; save();
-            return { ok: true, summary: e.summary };
+            e.undone = true;
+            const persisted = save();
+            return persisted ? { ok: true, summary: e.summary } : { ok: true, summary: e.summary, warning: 'undo applied but the audit log could not be persisted (userData dir not writable or full).' };
         } catch (err) { return { error: err.message }; }
     }
 
-    function clear() { data = { entries: [], seq: data.seq }; save(); return { ok: true }; }
+    function clear() {
+        data = { entries: [], seq: data.seq };
+        const persisted = save();
+        return persisted ? { ok: true } : { ok: true, warning: 'audit log cleared in memory only — the persisted log could not be rewritten (userData dir not writable or full).' };
+    }
 
     // Helper for callers wiring file mutations: decide whether content is small enough to keep for undo.
     function captureWriteUndo(absPath, existedBefore, prevContent) {

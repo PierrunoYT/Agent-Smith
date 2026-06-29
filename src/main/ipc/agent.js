@@ -199,8 +199,10 @@ module.exports = function registerAgentIpc(ipcMain, deps) {
                 try { const st = await fsPromises.stat(absPath); if (st.isFile() && st.size <= actionLog.MAX_UNDO_BYTES) prevContent = await fsPromises.readFile(absPath, 'utf-8'); } catch {}
             }
             if (pid) {
-                if (existed) await changeLedger.snapshotBefore(pid, absPath, 'write');
-                else await changeLedger.recordCreate(pid, absPath);
+                if (existed) {
+                    const snap = await changeLedger.snapshotBefore(pid, absPath, 'write');
+                    if (snap && snap.error) return { error: `Refusing to write — could not snapshot the existing file for Revert All: ${snap.error}` };
+                } else await changeLedger.recordCreate(pid, absPath);
             }
             await fsPromises.mkdir(path.dirname(absPath), { recursive: true });
             await fsPromises.writeFile(absPath, content, 'utf-8');
@@ -221,8 +223,11 @@ module.exports = function registerAgentIpc(ipcMain, deps) {
             const absPath = resolved.path;
             const guard = assessPathMutation(absPath, 'delete');
             if (!guard.allowed) return blockedPathResult(absPath, guard.reason);
-            if (pid) await changeLedger.snapshotBefore(pid, absPath, 'delete');
             const stats = await fsPromises.stat(absPath);
+            if (pid && stats.isFile()) {
+                const snap = await changeLedger.snapshotBefore(pid, absPath, 'delete');
+                if (snap && snap.error) return { error: `Refusing to delete — could not snapshot the existing file for Revert All: ${snap.error}` };
+            }
             // Capture content (small files) so a delete is undoable via the action log.
             let undo = null;
             if (stats.isDirectory()) {

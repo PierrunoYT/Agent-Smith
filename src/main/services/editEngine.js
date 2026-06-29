@@ -91,7 +91,8 @@ class EditEngine {
         if (isCRLF) outBody = outBody.replace(/\n/g, '\r\n');
         const finalContent = (hasBOM ? String.fromCharCode(0xFEFF) : '') + outBody;
 
-        await this.ledger.snapshotBefore(planId, absPath, 'edit');
+        const snap = await this.ledger.snapshotBefore(planId, absPath, 'edit');
+        if (snap && snap.error) return { error: `Refusing to edit — could not snapshot the existing file for Revert All: ${snap.error}` };
         await fsPromises.writeFile(absPath, finalContent, 'utf-8');
         this.projectContext.establishFromFilePath(absPath);
         const relPath = path.relative(this.projectContext.getRoot(), absPath).replace(/\\/g, '/');
@@ -112,11 +113,13 @@ class EditEngine {
         if (resolved.error) return { error: resolved.error };
         const absPath = resolved.path;
         let content;
+        let existed = true;
         try {
             content = await fsPromises.readFile(absPath, 'utf-8');
         } catch (e) {
             if (!opts.allowCreate) return { error: e.message };
             content = '';
+            existed = false;
         }
         // Normalize line endings + BOM for matching so an LF unified diff matches a
         // CRLF file (the Windows norm), then RESTORE the file's original EOL/BOM on
@@ -130,14 +133,16 @@ class EditEngine {
         const lfBody = body.replace(/\r\n/g, '\n');
         const lfPatch = String(patchText).replace(/\r\n/g, '\n');
 
-        const patched = applyPatchToFile(lfBody, lfPatch);
+        const patched = applyPatchToFile(lfBody, lfPatch, { expectedPath: filePath });
         if (patched.error) return patched;
         if (!opts.dryRun) {
             let outBody = patched.content;
             if (isCRLF) outBody = outBody.replace(/\n/g, '\r\n');
             const finalContent = (hasBOM ? String.fromCharCode(0xFEFF) : '') + outBody;
-            if (content.length) await this.ledger.snapshotBefore(planId, absPath, 'edit');
-            else await this.ledger.recordCreate(planId, absPath);
+            if (existed) {
+                const snap = await this.ledger.snapshotBefore(planId, absPath, 'edit');
+                if (snap && snap.error) return { error: `Refusing to patch — could not snapshot the existing file for Revert All: ${snap.error}` };
+            } else await this.ledger.recordCreate(planId, absPath);
             await fsPromises.writeFile(absPath, finalContent, 'utf-8');
             this.projectContext.establishFromFilePath(absPath);
         }

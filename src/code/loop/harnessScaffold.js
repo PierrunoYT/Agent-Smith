@@ -364,7 +364,8 @@ async function replacePacmanArtifacts(session, execDeps, emit, gate) {
         const abs = path.join(session.projectRoot, rel);
         await fs.promises.mkdir(path.dirname(abs), { recursive: true });
         if (fs.existsSync(abs) && execDeps?.changeLedger?.snapshotBefore) {
-            await execDeps.changeLedger.snapshotBefore(session.id, abs, 'write');
+            const snap = await execDeps.changeLedger.snapshotBefore(session.id, abs, 'write');
+            if (snap && snap.error) return null;
         } else if (!fs.existsSync(abs) && execDeps?.changeLedger?.recordCreate) {
             await execDeps.changeLedger.recordCreate(session.id, abs);
         }

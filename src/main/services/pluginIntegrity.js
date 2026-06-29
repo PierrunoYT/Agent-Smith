@@ -13,26 +13,33 @@
 
 const crypto = require('crypto');
 
-const CODE_EXT = new Set(['.js', '.cjs', '.mjs', '.json']);
+// Hash every file reachable from the plugin root. Runtime assets in dist/build/
+// node_modules/ are part of the trusted surface because plugin code can read them.
+const IGNORE_DIRS = new Set();
 
 function walk(dir, fs, path, base, out) {
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-        if (e.name === 'node_modules' || e.name === '.git') continue;
+        if (IGNORE_DIRS.has(e.name)) continue;
         const abs = path.join(dir, e.name);
         const rel = path.relative(base, abs).replace(/\\/g, '/');
         if (e.isDirectory()) {
             walk(abs, fs, path, base, out);
-        } else if (CODE_EXT.has(path.extname(e.name).toLowerCase())) {
+        } else {
+            // Hash EVERY file under the plugin dir (not just .js/.json). A plugin can
+            // read templates, prompts, binaries, WASM, certificates, or data files at
+            // runtime; changing those after trust-on-enable must change the hash.
             out.push({ rel, abs });
         }
     }
 }
 
 /**
- * Deterministic sha256 over every code/manifest file under the plugin dir
- * (sorted by relative path; content + path included so a rename also changes the hash).
+ * Deterministic sha256 over every file under the plugin dir (sorted by relative
+ * path; content + path included so a rename also changes the hash). Throws if any
+ * file cannot be read — a transient permissions/IO error must not produce a
+ * deterministic hash that gets trusted (the previous empty-string fallback could).
  */
 function hashPluginDir(dir, deps = {}) {
     const fs = deps.fs || require('fs');
@@ -42,8 +49,15 @@ function hashPluginDir(dir, deps = {}) {
     files.sort((a, b) => a.rel.localeCompare(b.rel));
     const h = crypto.createHash('sha256');
     for (const f of files) {
-        let content = '';
-        try { content = fs.readFileSync(f.abs); } catch (e) { content = ''; }
+        let content;
+        try {
+            content = fs.readFileSync(f.abs);
+        } catch (e) {
+            // Fail closed: an unreadable file must not hash as empty content. Either a
+            // transient IO error would trust the wrong content set, or a malicious local
+            // actor could make a file unreadable during re-enable to trust a stale hash.
+            throw new Error(`cannot read plugin file for hashing: ${f.rel} (${e.message})`);
+        }
         h.update(f.rel);
         h.update('\0');
         h.update(content);
@@ -52,4 +66,4 @@ function hashPluginDir(dir, deps = {}) {
     return h.digest('hex');
 }
 
-module.exports = { hashPluginDir };
+module.exports = { hashPluginDir, IGNORE_DIRS };

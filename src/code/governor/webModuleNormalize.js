@@ -23,7 +23,10 @@ async function ledgerWrite(abs, content, opts) {
     const cl = opts && opts.changeLedger;
     const id = opts && opts.sessionId;
     if (cl && id && typeof cl.snapshotBefore === 'function') {
-        try { await cl.snapshotBefore(id, abs, 'edit'); } catch (e) { /* non-fatal */ }
+        const snap = await cl.snapshotBefore(id, abs, 'edit');
+        if (snap && snap.error) {
+            throw new Error(`Could not snapshot ${abs}: ${snap.error}`);
+        }
     }
     fs.writeFileSync(abs, content, 'utf8');
 }

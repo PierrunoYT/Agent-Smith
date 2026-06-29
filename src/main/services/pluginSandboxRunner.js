@@ -11,6 +11,7 @@
  */
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 
 const pending = new Map();
@@ -64,8 +65,25 @@ process.on('message', async (msg) => {
     }
     if (msg.type !== 'invoke') return;
     try {
+        // In-child containment check: the parent sends toolFile discovered by
+        // pluginManager (already scoped to the plugin dir), but the runner protocol
+        // itself only sends toolFile. A future caller could pass a file outside the
+        // plugin dir while also granting project-root fs permissions — re-check here
+        // before require() so the child never loads code from outside the plugin dir.
+        const pluginDir = msg.pluginDir;
+        const toolFile = msg.toolFile;
+        if (!pluginDir || !toolFile) throw new Error('sandbox invoke missing pluginDir or toolFile');
+        fs.lstatSync(pluginDir);
+        fs.lstatSync(toolFile);
+        const realPluginDir = fs.realpathSync(pluginDir);
+        const realToolFile = fs.realpathSync(toolFile);
+        const rel = path.relative(realPluginDir, realToolFile);
+        const relParts = rel.split(path.sep);
+        if (rel === '..' || rel.startsWith('..') || relParts.includes('..') || path.isAbsolute(rel)) {
+            throw new Error(`tool file "${toolFile}" escapes plugin dir "${pluginDir}" — refusing to require`);
+        }
         const host = buildHost(msg.grantedCaps, msg.projectRoot);
-        const mod = require(msg.toolFile);
+        const mod = require(realToolFile);
         if (!mod || typeof mod.run !== 'function') throw new Error('tool module missing run()');
         const out = await mod.run(msg.args || {}, host);
         const value = out == null ? 'Success' : (typeof out === 'string' ? out : JSON.stringify(out));

@@ -8,6 +8,10 @@ const { pathToFileURL } = require('url');
 const { resolveProjectFile } = require('./previewService.js');
 
 const LOAD_TIMEOUT_MS = 20000;
+// Per-check timeout. A model-supplied check is arbitrary JavaScript; without a
+// timeout, `while(true){}` or a never-resolving promise would leave run() awaiting
+// forever and the hidden BrowserWindow would never be destroyed by the finally.
+const CHECK_TIMEOUT_MS = 5000;
 
 function getElectron() {
     try {
@@ -75,10 +79,18 @@ function createBrowserVerify(deps) {
             for (const check of checks) {
                 if (typeof check !== 'string' || !check.trim()) continue;
                 try {
-                    const ok = await win.webContents.executeJavaScript(
-                        `(function(){ try { return Boolean(${check}); } catch(e) { return false; } })()`,
-                        true
-                    );
+                    // Race the model-supplied check against a timeout so a hostile or
+                    // buggy expression (infinite loop, never-resolving promise) cannot
+                    // hang the run and leak the hidden BrowserWindow.
+                    const ok = await Promise.race([
+                        win.webContents.executeJavaScript(
+                            `(function(){ try { return Boolean(${check}); } catch(e) { return false; } })()`,
+                            true
+                        ),
+                        new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error(`Check timed out (${CHECK_TIMEOUT_MS}ms): ${check}`)), CHECK_TIMEOUT_MS)
+                        )
+                    ]);
                     steps.push({ step: 'check', expression: check, pass: !!ok });
                     if (!ok) {
                         return {
