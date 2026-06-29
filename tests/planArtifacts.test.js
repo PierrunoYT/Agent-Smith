@@ -46,3 +46,23 @@ test('PlanAnchor.toBlock includes plan excerpt when enabled', async () => {
     assert.match(block, /\[PLAN ARTIFACTS\]/);
     assert.match(block, /PLAN excerpt/);
 });
+
+test('reloadMilestones keeps e2e milestones alongside em-dash verify Final', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-mixed-'));
+    const pa = await PlanArtifacts.ensure(root, 'build a web app', { forcePlan: true });
+    const plan = planPath(root);
+    fs.writeFileSync(plan, [
+        '# PLAN.md',
+        '',
+        '## Milestones',
+        '',
+        '- [ ] **M1: Browser gate** | e2e: `npm run test:e2e`',
+        '- [ ] **Final: all checks pass** — verify: `harness completion gate`',
+        ''
+    ].join('\n'), 'utf-8');
+    pa.reloadMilestones();
+    const ids = pa.milestones.map(m => m.id);
+    assert.deepEqual(ids, ['M1', 'Final']);
+    assert.equal(pa.milestones.find(m => m.id === 'M1').e2e, 'npm run test:e2e');
+    assert.equal(pa.milestones.find(m => m.id === 'Final').verify, 'harness completion gate');
+});
