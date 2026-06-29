@@ -1,8 +1,14 @@
 const fs = require('fs');
 
-const legacyToolsPath = process.argv[2] || 'hotfix2/v41.7/tools.js';
-const legacyIndex = process.argv[3] || 'hotfix2/v41.7/index.js';
+const legacyToolsPath = process.argv[2];
+const legacyIndex = process.argv[3];
 const targetToolsPath = process.argv[4] || 'src/renderer/modes/agentTools.js';
+
+if (!legacyToolsPath || !legacyIndex) {
+    throw new Error(
+        'Usage: node replace-tools.js <legacy-tools.js> <legacy-index.js> [target-agentTools.js]'
+    );
+}
 
 function readRequired(filePath, description) {
     if (!fs.existsSync(filePath)) {

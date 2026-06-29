@@ -758,8 +758,8 @@ const PUBLIC_FILE_PREFIXES = [
 function isPublicStaticPath(urlPath) {
     let decoded;
     try { decoded = decodeURIComponent(urlPath); } catch (e) { decoded = urlPath; }
+    if (decoded.includes('\\') || decoded.includes('\0')) return false;
     const normalized = path.posix.normalize('/' + decoded.replace(/^\/+/, ''));
-    if (normalized.includes('\0')) return false;
     return PUBLIC_FILE_PATHS.has(normalized) || PUBLIC_FILE_PREFIXES.some(prefix => normalized.startsWith(prefix));
 }
 
@@ -895,7 +895,6 @@ const webServer = http.createServer((req, res) => {
                 rejected = true;
                 res.writeHead(413, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
                 res.end(JSON.stringify({ error: 'Request body too large' }));
-                req.destroy();
                 return;
             }
             body += chunk.toString();
@@ -1091,7 +1090,7 @@ function startWebServer(attempt = 0) {
         console.log('\n=========================================');
         console.log(' Web Interface hosted at: http://' + getLocalIP() + ':' + WEB_PORT);
         console.log('=========================================\n');
-        if (process.env.AGENT_SMITH_ENABLE_TUNNEL === '1' && !process.env.AGENT_SMITH_NO_TUNNEL) startCloudflareTunnel().catch(console.error);
+        if (process.env.AGENT_SMITH_ENABLE_TUNNEL === '1' && process.env.AGENT_SMITH_NO_TUNNEL !== '1') startCloudflareTunnel().catch(console.error);
     });
 }
 webServer.on('error', (err) => {
